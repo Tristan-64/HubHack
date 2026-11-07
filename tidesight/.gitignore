@@ -11,3 +11,8 @@ human_counts.csv
 __pycache__/
 *.pyc
 .venv/
+
+# Fish-count app
+videos/*
+!videos/.gitkeep
+models/*.weights

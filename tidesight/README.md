@@ -1,5 +1,31 @@
 # TideSight
 
+## Fish counter app (Streamlit, no AI install needed)
+
+Local web app for counting fish in dark GoPro footage. Nothing is uploaded.
+
+```
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+1. Copy videos (mp4, mov, avi, m4v) into the `videos/` folder, then pick one in the app.
+2. Trim, enhance, run detection (Motion by default), review each sampled frame, then build the report.
+3. Results go to `outputs/<video name>/` (frames, screenshots, fish.csv, frames.csv, summary.csv).
+
+Optional YOLO-Fish (AI): put these in `models/`:
+- `yolo-fish-2.cfg` from https://github.com/tamim662/YOLO-Fish/tree/main/models
+- `merge_yolo-fish-2.weights` from the "merged dataset" Google Drive link in that repo's README
+
+Licence note: YOLO-Fish is GPL-3.0. This repo is MIT and does not include YOLO-Fish code, config or weights (weights are git-ignored), so MIT is fine. If you ever commit those files or copy its code, the combined project must be released under GPL-3.0.
+
+The older Grounding-DINO scripts (`run_tidesight.py`, `test_detector.py`, `validate.py`, `config.yaml`) are not used by the app; they need `pip install -r requirements-legacy.txt`.
+
+---
+
+# Original TideSight pipeline (legacy)
+
 Automated MeanCount for Coastal Action's fish video surveys, built for RBC HubHacks 2026 (Problem Statement 2).
 
 TideSight follows Coastal Action's draft Fish Video Analysis Protocol step for step. It trims the video, takes a subsample every 60 seconds, counts the fish in each one-second window, and writes the same spreadsheet staff fill in by hand, plus a screenshot of every analysed frame. Anything the model is unsure about is flagged for a person instead of being counted ("when in doubt, don't count").
