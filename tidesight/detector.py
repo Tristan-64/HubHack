@@ -1,4 +1,5 @@
 """Community Fish Detector: weight download, loading, running. One class: fish."""
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -19,6 +20,7 @@ MODELS = {
 }
 MIN_CONF = 0.2
 _loaded = {}
+_lock = threading.Lock()
 
 
 def ensure_weights(name, progress=None):
@@ -73,6 +75,10 @@ class Detector:
 
     def detect(self, frame_bgr, conf=MIN_CONF):
         """Returns [[x1,y1,x2,y2,conf], ...] in pixels."""
+        with _lock:
+            return self._detect(frame_bgr, conf)
+
+    def _detect(self, frame_bgr, conf):
         h, w = frame_bgr.shape[:2]
         if self.kind == "rfdetr":
             from PIL import Image

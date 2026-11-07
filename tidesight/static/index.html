@@ -16,20 +16,22 @@
   <div id="err" class="err hidden"></div>
 </section>
 
-<div id="review" class="hidden">
+<div id="review" class="hidden"><div class="layout"><div class="main">
   <section class="panel"><div class="stats">
     <div class="stat"><b id="sLen">–</b><span>Video length</span></div>
     <div class="stat"><b id="sSkip">–</b><span>With no fish (can be skipped)</span></div>
     <div class="stat"><b id="sMom">–</b><span>Fish moments</span></div>
     <div class="stat"><b id="sName" style="font-size:15px;font-weight:600;word-break:break-all">–</b><span>File</span></div>
-  </div></section>
+  </div><div class="cmpline" id="cmp"></div></section>
 
   <section class="panel">
     <h2>Survey footage <small id="mdl"></small></h2>
-    <div class="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas></div>
+    <div id="baWrap" class="ba hidden"><figure><div class="bawrap"><img id="baO"><canvas id="baOc"></canvas></div><figcaption>Original</figcaption></figure><figure><div class="bawrap"><img id="baE"><canvas id="baEc"></canvas></div><figcaption>With your filters</figcaption></figure></div>
+    <div class="stage" id="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas></div>
     <div class="ctrls">
       <button class="primary" id="play">▶ Play</button>
       <button id="prevFish">⏮ Previous fish</button><button id="nextFish">Next fish ⏭</button>
+      <button id="baBtn" title="Compare the paused picture with and without your filters">◧ Before / after</button>
       <button id="stepB" title="Back one checked picture">◀ Step</button><button id="stepF" title="Forward one checked picture">Step ▶</button>
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
@@ -58,4 +60,17 @@
 
   <section class="panel moments"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>
+</div>
+<aside class="side panel" id="side">
+  <h2>Picture filters <small>what the fish finder sees</small></h2>
+  <img id="pvImg" class="pv" alt="Filter preview">
+  <div class="note" id="pvNote">This is the paused picture with your filters. The fish finder gets exactly this picture.</div>
+  <div id="filters"></div>
+  <div class="btnrow"><button id="resetF">Reset</button><button id="rerun" class="primary">Re-run detection with these settings</button></div>
+  <div id="rrProg" class="hidden" style="margin-top:10px"><div id="rrTxt" class="note"></div><div class="bar"><i id="rrBar"></i></div></div>
+  <div class="note" id="usedNote"></div>
+  <div class="note warn hidden" id="dirtyNote">The sliders are different from the results you are looking at. Click “Re-run detection” to use them.</div>
+  <label class="runsl">Saved runs <select id="runs"></select></label>
+  <div class="note">Denoise is slow: it makes re-running take much longer.</div>
+</aside></div>
 </div><script src="/static/app.js"></script></body></html>

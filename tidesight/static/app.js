@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const MINC = 0.2;
-let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '';
+let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '', ORIG = null, RUNS = [], loadedCfg = null;
 const vid = $('vid'), cv = $('cv'), ctx = cv.getContext('2d');
 
 // ---------- setup ----------
@@ -42,8 +42,9 @@ async function poll(id, model, sfps) {
     else setProg(`Analysing ${s.done} of ${s.total} frames${s.converting ? ' · preparing video for playback' : ''}`, s.total ? s.done / s.total : 0);
     await new Promise(r => setTimeout(r, 600));
   }
-  QS = q; R = await (await fetch(`/api/results/${id}${q}`)).json();
+  R = await (await fetch(`/api/results/${id}${q}`)).json();
   $('prog').classList.add('hidden');
+  await adopt(R, true);
   load();
 }
 
@@ -51,7 +52,8 @@ async function poll(id, model, sfps) {
 function fmt(t, d = 2) { const m = Math.floor(t / 60), sec = t - m * 60; return String(m).padStart(2, '0') + ':' + sec.toFixed(d).padStart(2 + (d ? d + 1 : 0), '0'); }
 function load() {
   $('review').classList.remove('hidden');
-  vid.src = `/video/${VID}/${R.playable}`;
+  const src = `/video/${VID}/${R.playable}`;
+  if (!vid.src.endsWith(src)) vid.src = src;
   $('mdl').textContent = `${R.model} · ${R.sample_fps} pictures/sec`;
   $('sLen').textContent = fmt(R.duration, 0);
   $('sName').textContent = R.name || '–';
@@ -94,6 +96,7 @@ function recompute() {
     }
   });
   $('sMom').textContent = momentsList.length;
+  renderCompare();
   renderSummary(tally, newish);
   const el = $('moments');
   el.innerHTML = momentsList.length ? '' : '<p class="note">No fish at this confidence. Try moving the slider to the left.</p>';
@@ -211,3 +214,138 @@ async function runSpecies(sample) {
   recompute();
 }
 $('cut').oninput = e => { cutoff = parseFloat(e.target.value); $('cutv').textContent = cutoff.toFixed(2); if (R) recompute(); };
+
+
+// ---------- picture filters ----------
+const FILTERS = [
+  ['Light', null],
+  ['brightness', 'Brightness', -100, 100, 1, 0], ['contrast', 'Contrast', 0.5, 3, 0.05, 1], ['gamma', 'Gamma (lifts dark water)', 0.3, 3, 0.05, 1],
+  ['Detail', null],
+  ['clahe', 'Local contrast', 0, 10, 0.5, 0], ['denoise', 'Denoise', 0, 20, 1, 0], ['sharpen', 'Sharpen', 0, 3, 0.1, 0],
+  ['Colour', null],
+  ['saturation', 'Colour strength', 0, 3, 0.05, 1], ['warmth', 'Warmth (brings back reds)', -50, 50, 1, 0],
+];
+const DEF = {}; FILTERS.forEach(f => { if (f[1]) DEF[f[0]] = f[5]; });
+let cfg = { ...DEF };
+const isDef = c => Object.keys(DEF).every(k => Math.abs((c[k] ?? DEF[k]) - DEF[k]) < 1e-9);
+const cfgParam = c => isDef(c) ? '' : `&cfg=${encodeURIComponent(JSON.stringify(c))}`;
+const baseQ = () => `?model=${R.model}&sample_fps=${R.sample_fps}`;
+const sameCfg = (a, b) => Object.keys(DEF).every(k => Math.abs((a[k] ?? DEF[k]) - (b[k] ?? DEF[k])) < 1e-6);
+
+(function buildFilters() {
+  const box = $('filters');
+  FILTERS.forEach(f => {
+    if (!f[1]) { box.insertAdjacentHTML('beforeend', `<div class="fgroup">${f[0]}</div>`); return; }
+    const [k, label, mn, mx, st, df] = f;
+    box.insertAdjacentHTML('beforeend', `<div class="frow"><label>${label}<b id="fv_${k}">${df}</b></label><input type="range" id="f_${k}" min="${mn}" max="${mx}" step="${st}" value="${df}"></div>`);
+    $('f_' + k).oninput = e => { cfg[k] = parseFloat(e.target.value); $('fv_' + k).textContent = cfg[k]; filtersChanged(); };
+  });
+})();
+function setSliders(c) {
+  cfg = { ...DEF, ...c };
+  Object.keys(DEF).forEach(k => { $('f_' + k).value = cfg[k]; $('fv_' + k).textContent = cfg[k]; });
+  filtersChanged();
+}
+let pvTimer = null;
+function filtersChanged() {
+  if (!R) return;
+  $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg || DEF));
+  clearTimeout(pvTimer); pvTimer = setTimeout(() => { updatePreview(); if (baOn) fetchCompare(); }, 300);
+}
+function updatePreview() {
+  if (!R) return;
+  $('pvImg').src = `/api/preview/${VID}?t=${(vid.currentTime || 0).toFixed(3)}${cfgParam(cfg)}`;
+}
+vid.addEventListener('seeked', () => { if (vid.paused) { updatePreview(); if (baOn) fetchCompare(); } });
+vid.addEventListener('pause', () => { updatePreview(); if (baOn) fetchCompare(); });
+$('resetF').onclick = () => setSliders(DEF);
+
+// Take a results object as "the results shown"
+async function adopt(res, first) {
+  R = res; loadedCfg = { ...DEF, ...(res.settings || {}) };
+  QS = baseQ() + cfgParam(loadedCfg);
+  if (first) setSliders(loadedCfg); else { $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg)); }
+  $('usedNote').innerHTML = `Results shown used: <b>${res.settings_text || 'Original (no changes)'}</b>`;
+  if (isDef(loadedCfg)) ORIG = res;
+  else if (!ORIG || ORIG.model !== res.model || ORIG.sample_fps !== res.sample_fps) {
+    try { const r = await fetch(`/api/results/${VID}${baseQ()}`); ORIG = r.ok ? await r.json() : null; } catch { ORIG = null; }
+  }
+  await loadRuns();
+}
+async function loadRuns() {
+  RUNS = (await (await fetch(`/api/runs/${VID}`)).json()).filter(r => r.model === R.model && r.sample_fps === R.sample_fps);
+  const cur = RUNS.findIndex(r => sameCfg(r.cfg, loadedCfg));
+  $('runs').innerHTML = RUNS.map((r, i) => `<option value="${i}">${r.text}</option>`).join('');
+  $('runs').value = cur;
+}
+$('runs').onchange = e => { const r = RUNS[+e.target.value]; setSliders(r.cfg); rerun(); };
+
+async function rerun() {
+  const btn = $('rerun'); btn.disabled = true;
+  const q = baseQ() + cfgParam(cfg);
+  try {
+    const r = await (await fetch(`/api/analyse/${VID}${q}`, { method: 'POST' })).json();
+    if (!r.cached) {
+      $('rrProg').classList.remove('hidden');
+      while (true) {
+        const s = await (await fetch(`/api/status/${VID}${q}`)).json();
+        if (s.stage === 'error') { $('rrTxt').textContent = s.error; return; }
+        if (s.stage === 'done') break;
+        $('rrTxt').textContent = s.stage === 'analysing' ? `Analysing ${s.done} of ${s.total} frames` : 'Getting ready…';
+        $('rrBar').style.width = (s.total ? s.done / s.total * 100 : 2) + '%';
+        await new Promise(r => setTimeout(r, 700));
+      }
+    }
+    const res = await (await fetch(`/api/results/${VID}${q}`)).json();
+    await adopt(res, false); recompute();
+  } finally { btn.disabled = false; $('rrProg').classList.add('hidden'); }
+}
+$('rerun').onclick = rerun;
+
+// ---------- comparison line ----------
+function momentsFor(res, t) {
+  let moments = 0, boxes = 0, prev = false;
+  res.samples.forEach(s => {
+    const n = s.boxes.filter(b => b[4] >= t).length; boxes += n;
+    if (n && !prev) moments++; prev = n > 0;
+  });
+  return { moments, boxes };
+}
+function renderCompare() {
+  if (!R) return;
+  const f = x => `${x.moments} fish moment${x.moments === 1 ? '' : 's'}, ${x.boxes} boxes above ${thr.toFixed(2)}`;
+  const cur = momentsFor(R, thr);
+  if (!ORIG || ORIG === R) { $('cmp').innerHTML = `<b>Original (no filters):</b> ${f(cur)}`; return; }
+  $('cmp').innerHTML = `<b>Original:</b> ${f(momentsFor(ORIG, thr))} &nbsp;·&nbsp; <b>Current settings:</b> ${f(cur)}`;
+}
+
+// ---------- before / after ----------
+let baOn = false, baToken = 0;
+$('baBtn').onclick = () => {
+  baOn = !baOn; $('baBtn').classList.toggle('on', baOn);
+  $('baWrap').classList.toggle('hidden', !baOn); $('stage').classList.toggle('hidden', baOn);
+  if (baOn) { vid.pause(); fetchCompare(); }
+};
+async function fetchCompare() {
+  const tok = ++baToken, t = vid.currentTime || 0;
+  $('baBtn').textContent = '◧ Working…';
+  try {
+    const r = await fetch(`/api/compare/${VID}?t=${t.toFixed(3)}&model=${R.model}${cfgParam(cfg)}`);
+    if (!r.ok || tok !== baToken) return;
+    const d = await r.json();
+    await Promise.all([['baO', 'baOc', d.original], ['baE', 'baEc', d.enhanced]].map(([i, c, x]) => new Promise(res => {
+      const im = $(i); im.onload = () => { drawBA(c, im, x.boxes); res(); }; im.src = x.img;
+    })));
+  } finally { if (tok === baToken) $('baBtn').textContent = '◧ Before / after'; }
+}
+function drawBA(cid, im, boxes) {
+  const c = $(cid), dpr = window.devicePixelRatio || 1, W = im.clientWidth, H = im.clientHeight;
+  c.width = W * dpr; c.height = H * dpr; const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x.font = '600 12px -apple-system,Segoe UI,sans-serif'; x.textBaseline = 'top';
+  boxes.forEach(b => {
+    const ok = b[4] >= thr, col = ok ? '#14c4af' : '#f0b429', bx = b[0] * W, by = b[1] * H;
+    x.lineWidth = 2; x.strokeStyle = col; x.strokeRect(bx, by, (b[2] - b[0]) * W, (b[3] - b[1]) * H);
+    const l = `Fish ${b[4].toFixed(2)}${ok ? '' : ' · check'}`, tw = x.measureText(l).width + 8, ly = by >= 18 ? by - 17 : by + 1;
+    x.fillStyle = col; x.fillRect(bx - 1, ly, tw, 16); x.fillStyle = '#06161a'; x.fillText(l, bx + 3, ly + 2);
+  });
+}

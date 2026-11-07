@@ -25,3 +25,9 @@
 - species.csv replaced with the 30 Nova Scotia species (the old 18-species Streamlit seed is overwritten; streamlit_app.py still reads common_name).
 - Tested with a fake classifier via FastAPI TestClient (single frame, whole video, skip-already-done, small-box -> Unknown, unavailable -> HTTP 400). Real BioCLIP not run (not installed).
 - No commands run besides tests; test upload dir removed.
+
+## Picture filters
+- enhance.py: enhance_frame/normalize_cfg/settings_id/describe_cfg (old enhance() kept for streamlit_app.py)
+- app.py: cfg plumbing (results_<model>_<fps>[_<settingsid>].json, "" id = original), new /api/analyse, /api/runs, /api/preview, /api/compare; detector.py: lock around detect()
+- static/: side panel (filters, preview, Reset, Re-run, saved runs), Before/after, comparison line
+- Tested with FastAPI TestClient + real Nano model on a synthetic video: identity at defaults, every filter changes output, cached re-run, runs list, preview JPEG, compare. Browser UI not tested (no browser here). No pip installs; test uploads removed.

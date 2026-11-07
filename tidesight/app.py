@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import detector
 import species
+from enhance import describe_cfg, enhance_frame, normalize_cfg, settings_id
 
 ROOT = Path(__file__).parent
 UPLOADS = ROOT / "uploads"
@@ -24,6 +25,31 @@ BROWSER_EXTS = {".mp4", ".m4v", ".mov"}
 
 app = FastAPI()
 JOBS = {}  # key -> status dict
+
+
+def parse_cfg(raw):
+    try:
+        return normalize_cfg(json.loads(raw)) if raw else normalize_cfg()
+    except Exception:
+        return normalize_cfg()
+
+
+def rfile(d, model, fps, sid=""):
+    return d / (f"results_{model}_{fps:g}.json" if not sid else f"results_{model}_{fps:g}_{sid}.json")
+
+
+def jkey(vid, model, fps, sid="", extra=""):
+    return f"{vid}_{model}_{fps:g}_{sid}{extra}"
+
+
+def read_frame(orig, idx):
+    cap = cv2.VideoCapture(str(orig))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, idx))
+    ok, frame = cap.read()
+    cap.release()
+    if not ok:
+        raise HTTPException(404, "could not read that frame")
+    return frame
 
 
 def vdir(vid):
@@ -69,9 +95,10 @@ def make_playable(d, orig, job):
     job["converting"] = False
 
 
-def analyse(key, d, orig, model, sample_fps):
+def analyse(key, d, orig, model, sample_fps, cfg):
     job = JOBS[key]
-    out = d / f"results_{model}_{sample_fps:g}.json"
+    sid = settings_id(cfg)
+    out = rfile(d, model, sample_fps, sid)
     try:
         cap = cv2.VideoCapture(str(orig))
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -100,7 +127,7 @@ def analyse(key, d, orig, model, sample_fps):
             if not ok:
                 break
             fi += 1
-            boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(frame)]
+            boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(enhance_frame(frame, cfg))]
             samples.append({"t": round(target / fps, 3), "frame": target, "boxes": boxes})
             next_i += 1
             job["done"] = next_i
@@ -109,7 +136,7 @@ def analyse(key, d, orig, model, sample_fps):
         if conv_err:
             raise conv_err[0]
         res = {"model": model, "sample_fps": sample_fps, "min_conf": detector.MIN_CONF, "duration": duration,
-               "fps": fps, "frames": nframes, "width": w, "height": h, "samples": samples, "playable": job["playable"]}
+               "fps": fps, "frames": nframes, "width": w, "height": h, "settings": cfg, "samples": samples, "playable": job["playable"]}
         out.write_text(json.dumps(res))
         job.update(stage="done", done=len(samples), total=len(samples))
     except Exception as e:
@@ -134,7 +161,9 @@ def friendly(e):
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), model: str = Form("nano"), sample_fps: float = Form(2.0)):
+async def upload(file: UploadFile = File(...), model: str = Form("nano"), sample_fps: float = Form(2.0), cfg: str = Form("")):
+    cfg = parse_cfg(cfg)
+    sid = settings_id(cfg)
     if model not in detector.MODELS:
         raise HTTPException(400, "unknown model")
     sample_fps = max(0.1, min(float(sample_fps), 30.0))
@@ -156,31 +185,34 @@ async def upload(file: UploadFile = File(...), model: str = Form("nano"), sample
     else:
         tmp.unlink()
     orig = original_path(d)
-    key = f"{vid}_{model}_{sample_fps:g}"
-    cached = d / f"results_{model}_{sample_fps:g}.json"
+    key = jkey(vid, model, sample_fps, sid)
+    cached = rfile(d, model, sample_fps, sid)
     if cached.exists():
         JOBS[key] = {"stage": "done", "cached": True}
     elif JOBS.get(key, {}).get("stage") not in ("loading", "downloading", "analysing"):
         JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
-        threading.Thread(target=analyse, args=(key, d, orig, model, sample_fps), daemon=True).start()
+        threading.Thread(target=analyse, args=(key, d, orig, model, sample_fps, cfg), daemon=True).start()
     return {"id": vid, "key": key, "model": model, "sample_fps": sample_fps}
 
 
 @app.get("/api/status/{vid}")
-def status(vid: str, model: str = "nano", sample_fps: float = 2.0):
+def status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
     d = vdir(vid)
-    key = f"{vid}_{model}_{sample_fps:g}"
-    if (d / f"results_{model}_{sample_fps:g}.json").exists():
+    sid = settings_id(parse_cfg(cfg))
+    key = jkey(vid, model, sample_fps, sid)
+    if rfile(d, model, sample_fps, sid).exists():
         return {"stage": "done"}
     return JOBS.get(key, {"stage": "unknown"})
 
 
 @app.get("/api/results/{vid}")
-def results(vid: str, model: str = "nano", sample_fps: float = 2.0):
-    p = vdir(vid) / f"results_{model}_{sample_fps:g}.json"
+def results(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
+    p = rfile(vdir(vid), model, sample_fps, settings_id(parse_cfg(cfg)))
     if not p.exists():
         raise HTTPException(404, "not ready")
     data = json.loads(p.read_text())
+    data.setdefault("settings", normalize_cfg())
+    data["settings_text"] = describe_cfg(data["settings"])
     n = vdir(vid) / "name.txt"
     data["name"] = n.read_text() if n.exists() else ""
     return JSONResponse(data)
@@ -189,10 +221,10 @@ def results(vid: str, model: str = "nano", sample_fps: float = 2.0):
 RES_LOCK = threading.Lock()
 
 
-def run_species(key, d, orig, model, sample_fps, conf, only):
+def run_species(key, d, orig, model, sample_fps, conf, only, cfg):
     """Classify confident boxes. only = sample index (this frame) or None (whole video)."""
     job = JOBS[key]
-    path = d / f"results_{model}_{sample_fps:g}.json"
+    path = rfile(d, model, sample_fps, settings_id(cfg))
     try:
         res = json.loads(path.read_text())
         S = res["samples"]
@@ -222,6 +254,7 @@ def run_species(key, d, orig, model, sample_fps, conf, only):
             ok, frame = cap.read()
             fi += 1
             if ok:
+                frame = enhance_frame(frame, cfg)
                 crops = {j: species.crop(frame, S[i]["boxes"][j], w, h) for j in need}
                 valid = [j for j, c in crops.items() if c is not None]
                 preds = species.classify([crops[j] for j in valid])
@@ -253,22 +286,88 @@ def species_info():
 
 
 @app.post("/api/species/{vid}")
-def species_run(vid: str, model: str = "nano", sample_fps: float = 2.0, conf: float = 0.6, sample: int = -1):
+def species_run(vid: str, model: str = "nano", sample_fps: float = 2.0, conf: float = 0.6, sample: int = -1, cfg: str = ""):
+    cfg = parse_cfg(cfg)
     if not species.available():
         raise HTTPException(400, "Species suggestions need an extra install: pip install -r requirements-ai.txt")
     d = vdir(vid)
-    key = f"{vid}_{model}_{sample_fps:g}_species"
+    key = jkey(vid, model, sample_fps, settings_id(cfg), "_species")
     if JOBS.get(key, {}).get("stage") in ("loading", "analysing"):
         return {"started": False}
     JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
-    threading.Thread(target=run_species, args=(key, d, original_path(d), model, sample_fps, conf, None if sample < 0 else sample),
+    threading.Thread(target=run_species, args=(key, d, original_path(d), model, sample_fps, conf, None if sample < 0 else sample, cfg),
                      daemon=True).start()
     return {"started": True}
 
 
 @app.get("/api/species_status/{vid}")
-def species_status(vid: str, model: str = "nano", sample_fps: float = 2.0):
-    return JOBS.get(f"{vid}_{model}_{sample_fps:g}_species", {"stage": "idle"})
+def species_status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
+    return JOBS.get(jkey(vid, model, sample_fps, settings_id(parse_cfg(cfg)), "_species"), {"stage": "idle"})
+
+
+@app.post("/api/analyse/{vid}")
+def analyse_again(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
+    """Run (or reuse) detection with these filter settings."""
+    cfg = parse_cfg(cfg)
+    d = vdir(vid)
+    sid = settings_id(cfg)
+    key = jkey(vid, model, sample_fps, sid)
+    if rfile(d, model, sample_fps, sid).exists():
+        return {"cached": True}
+    if JOBS.get(key, {}).get("stage") in ("loading", "downloading", "analysing"):
+        return {"cached": False, "started": False}
+    JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
+    threading.Thread(target=analyse, args=(key, d, original_path(d), model, sample_fps, cfg), daemon=True).start()
+    return {"cached": False, "started": True}
+
+
+@app.get("/api/runs/{vid}")
+def runs(vid: str):
+    out = []
+    for p in sorted(vdir(vid).glob("results_*.json")):
+        r = json.loads(p.read_text())
+        cfg = normalize_cfg(r.get("settings"))
+        out.append({"model": r["model"], "sample_fps": r["sample_fps"], "cfg": cfg, "sid": settings_id(cfg),
+                    "text": describe_cfg(cfg)})
+    return out
+
+
+def _jpeg(img, maxw=None):
+    if maxw and img.shape[1] > maxw:
+        img = cv2.resize(img, (maxw, int(img.shape[0] * maxw / img.shape[1])), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return buf.tobytes()
+
+
+@app.get("/api/preview/{vid}")
+def preview(vid: str, t: float = 0.0, cfg: str = ""):
+    """The enhanced frame, produced by the same enhance_frame the detector uses."""
+    orig = original_path(vdir(vid))
+    cap = cv2.VideoCapture(str(orig))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    cap.release()
+    frame = enhance_frame(read_frame(orig, round(t * fps)), parse_cfg(cfg))
+    from fastapi.responses import Response
+    return Response(_jpeg(frame, 800), media_type="image/jpeg")
+
+
+@app.get("/api/compare/{vid}")
+def compare(vid: str, t: float = 0.0, model: str = "nano", cfg: str = ""):
+    """Original and enhanced version of one frame, each with its own detections."""
+    import base64
+    cfg = parse_cfg(cfg)
+    orig = original_path(vdir(vid))
+    cap = cv2.VideoCapture(str(orig))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    cap.release()
+    frame = read_frame(orig, round(t * fps))
+    h, w = frame.shape[:2]
+    det = detector.get_detector(model)
+    out = {"width": w, "height": h}
+    for name, img in (("original", frame), ("enhanced", enhance_frame(frame, cfg))):
+        boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(img)]
+        out[name] = {"img": "data:image/jpeg;base64," + base64.b64encode(_jpeg(img, 1000)).decode(), "boxes": boxes}
+    return out
 
 
 @app.get("/api/models")
