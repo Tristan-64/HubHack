@@ -49,3 +49,8 @@
 - static/: Name box + Delete/Restore/Reset/Undo bar, tick row, Boxes list (Name column, "Boxes I edited" filter), stats (AI boxes edited, Boxes I drew), Save report / outlined video buttons; fish moments/timeline now use effective boxes (rejected removed, own added)
 - Bug found by tests and fixed: rejecting an untouched AI box was silently undone by the "unedited again" clean-up (boxes.js ensureAI)
 - Tests run: python selftest.py -> 34 checks passed; python component_test.py -> ALL PASS 11 (headless Chrome); real page loads in headless Chrome with no console errors. No pip installs.
+
+## Fish count + grid overlay
+- static/: "Fish in this picture" count bar (updateCount/countNow/peakCount), grid overlay in the Filters drawer (drawGrid, rows/cols 1-12), Cell column in the Boxes list
+- review.py: grid_cell(), grid_cell column in annotations.csv, grid in summary.csv; app.py /api/export takes rows & cols
+- selftest.py: grid_cell checks. Box add/remove/edit already existed (previous task), nothing new needed for that.

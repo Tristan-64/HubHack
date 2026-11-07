@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 const MINC = 0.2;
 let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '', ORIG = null, RUNS = [], loadedCfg = null, META = null;
+let GRID = { on: false, rows: 3, cols: 3 }, lastCount = '';
 let DOC = Boxes.emptyDoc(), HIST = Boxes.createHistory(), SEL = null, saveTimer = null, liveActive = false, ED = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const curModel = () => $('model').value, curRate = () => parseFloat($('sfps').value) || 2;
@@ -124,6 +125,43 @@ function recompute() {
   draw();
 }
 
+const cellName = (cx, cy) => String.fromCharCode(65 + Math.min(Math.max(Math.floor(cy * GRID.rows), 0), GRID.rows - 1)) + (Math.min(Math.max(Math.floor(cx * GRID.cols), 0), GRID.cols - 1) + 1);
+const cellOfBox = b => cellName((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+function drawGrid() {
+  const v = videoRect(), r = GRID.rows, c = GRID.cols;
+  ctx.save(); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.font = '600 12px -apple-system,Segoe UI,sans-serif'; ctx.textBaseline = 'top'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 3;
+  ctx.setLineDash([6, 4]);
+  for (let i = 1; i < r; i++) { const y = v.y + v.h * i / r; ctx.beginPath(); ctx.moveTo(v.x, y); ctx.lineTo(v.x + v.w, y); ctx.stroke(); }
+  for (let j = 1; j < c; j++) { const x = v.x + v.w * j / c; ctx.beginPath(); ctx.moveTo(x, v.y); ctx.lineTo(x, v.y + v.h); ctx.stroke(); }
+  ctx.setLineDash([]); ctx.strokeRect(v.x, v.y, v.w, v.h);
+  for (let i = 0; i < r; i++) for (let j = 0; j < c; j++) ctx.fillText(String.fromCharCode(65 + i) + (j + 1), v.x + v.w * j / c + 5, v.y + v.h * i / r + 4);
+  ctx.restore();
+}
+// How many fish are in the picture on screen (same rule as the report: not rejected, and confident or edited)
+function countNow() {
+  const i = R ? shownIndex() : -1; if (i < 0) return { n: 0, by: {}, unsure: 0, none: true };
+  const by = {}; let n = 0, unsure = 0;
+  Boxes.boxesAt(R, DOC, i).forEach(b => {
+    if (b.rejected) return;
+    if (b.kind === 'own' || b.conf >= thr || b.edited) { n++; by[b.label] = (by[b.label] || 0) + 1; } else unsure++;
+  });
+  return { n, by, unsure };
+}
+function peakCount() {
+  let best = 0, at = 0;
+  R.samples.forEach((s, i) => { const k = Boxes.boxesAt(R, DOC, i).filter(b => !b.rejected && (b.kind === 'own' || b.conf >= thr || b.edited)).length; if (k > best) { best = k; at = i; } });
+  return { best, at };
+}
+function updateCount() {
+  if (!R) return;
+  const c = countNow(), key = JSON.stringify(c) + thr + DOC.own.length;
+  if (key === lastCount) return; lastCount = key;
+  $('cntNow').textContent = c.n;
+  const names = Object.entries(c.by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${v}`).join(' · ');
+  $('cntDetail').textContent = (names || (c.none ? 'Move the video to a checked picture to see a count.' : 'No fish counted here.')) + (c.unsure ? ` · ${c.unsure} unsure (amber, below the confidence slider)` : '');
+  const p = peakCount(); $('cntPeak').textContent = p.best ? `Most in one picture: ${p.best} (at ${fmt(R.samples[p.at].t, 1)})` : '';
+}
 function shownIndex() { const t = vid.currentTime || 0, i = nearest(t); return Math.abs(R.samples[i].t - t) <= gap() * 1.01 ? i : -1; }
 function shownBoxes(i) { return i < 0 ? [] : Boxes.boxesAt(R, DOC, i); }
 
@@ -144,6 +182,7 @@ function draw() {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (GRID.on) drawGrid();
   const t = vid.currentTime || 0, i = R ? nearest(t) : 0, s = R ? R.samples[i] : null;
   if (R && Math.abs(s.t - t) <= gap() * 1.01) {
     const vr = videoRect(); ctx.font = '600 13px -apple-system,Segoe UI,sans-serif'; ctx.textBaseline = 'top';
@@ -168,6 +207,7 @@ function draw() {
       ctx.lineWidth = 2; ctx.strokeStyle = '#3b82f6'; ctx.setLineDash([5, 4]); ctx.strokeRect(x, y, (d.x2 - d.x1) * vr.w, (d.y2 - d.y1) * vr.h); ctx.setLineDash([]);
     }
   }
+  updateCount();
   // readouts
   $('time').textContent = `${fmt(t, 2)} · frame ${Math.round(t * M().fps)}`;
   $('head').style.left = (t / M().duration * 100) + '%';
@@ -500,6 +540,7 @@ function renderSel() {
 
 function renderReview() {
   if (!R) return;
+  lastCount = '';
   renderSel();
   const all = Boxes.allBoxes(R, DOC);
   $('sEdited').textContent = all.filter(b => b.kind === 'ai' && b.edited).length;
@@ -516,8 +557,8 @@ function renderReview() {
   if (onlyEdited) rows = rows.filter(b => b.edited);
   rows.sort((a, b) => R.samples[a.i].t - R.samples[b.i].t);
   const cap = rows.length > 300; if (cap) rows = rows.slice(0, 300);
-  $('boxList').innerHTML = rows.length ? `<table class="bt"><tr><th>Time</th><th>Name</th><th>Who</th><th>Confidence</th><th></th></tr>` + rows.map(b =>
-    `<tr data-id="${b.id}" class="${b.id === SEL ? 'sel' : ''}"><td>${fmt(R.samples[b.i].t, 1)}</td><td>${b.label.replace(/</g, '&lt;')}</td><td>${b.kind === 'own' ? 'Me' : 'AI'}</td><td>${b.conf === null ? '–' : b.conf.toFixed(2)}</td><td>${b.edited ? '✎ edited ' : ''}${b.rejected ? 'rejected' : ''}</td></tr>`).join('') + '</table>' + (cap ? '<p class="note">Showing the first 300 boxes.</p>' : '')
+  $('boxList').innerHTML = rows.length ? `<table class="bt"><tr><th>Time</th><th>Cell</th><th>Name</th><th>Who</th><th>Confidence</th><th></th></tr>` + rows.map(b =>
+    `<tr data-id="${b.id}" class="${b.id === SEL ? 'sel' : ''}"><td>${fmt(R.samples[b.i].t, 1)}</td><td>${GRID.on ? cellOfBox(b) : '–'}</td><td>${b.label.replace(/</g, '&lt;')}</td><td>${b.kind === 'own' ? 'Me' : 'AI'}</td><td>${b.conf === null ? '–' : b.conf.toFixed(2)}</td><td>${b.edited ? '✎ edited ' : ''}${b.rejected ? 'rejected' : ''}</td></tr>`).join('') + '</table>' + (cap ? '<p class="note">Showing the first 300 boxes.</p>' : '')
     : '<p class="note">No boxes to show here.</p>';
 }
 $('ticks').addEventListener('click', e => { const t = e.target.closest('.tick'); if (t) select(t.dataset.id, true); });
@@ -527,7 +568,7 @@ $('fEdited').onchange = $('fRejected').onchange = renderReview;
 // ---------- reports and the outlined video ----------
 $('expBtn').onclick = async () => {
   await saveNow(); $('expMsg').textContent = 'Saving the report…';
-  const r = await (await fetch(`/api/export/${VID}${QS}&thr=${thr}`, { method: 'POST' })).json();
+  const r = await (await fetch(`/api/export/${VID}${QS}&thr=${thr}&rows=${GRID.rows}&cols=${GRID.cols}`, { method: 'POST' })).json();
   $('expMsg').innerHTML = `Saved in <code>${r.folder}</code><br>` + r.files.map(f => `<a href="/download/${VID}/${f}">${f}</a>`).join(' · ');
 };
 $('olBtn').onclick = async () => {
@@ -542,3 +583,11 @@ $('olBtn').onclick = async () => {
     }
   } finally { b.disabled = false; }
 };
+
+// ---------- grid overlay (in the filters drawer) ----------
+function gridChanged() {
+  GRID.on = $('gridOn').checked;
+  GRID.rows = Math.min(12, Math.max(1, parseInt($('gridRows').value) || 3)); GRID.cols = Math.min(12, Math.max(1, parseInt($('gridCols').value) || 3));
+  if (R) renderReview(); draw();
+}
+['gridOn', 'gridRows', 'gridCols'].forEach(id => $(id).addEventListener('input', gridChanged));

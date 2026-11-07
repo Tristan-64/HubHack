@@ -107,10 +107,17 @@ def labels_used(boxes):
 
 # ---------------------------------------------------------------- CSV
 ANN_COLS = ["video", "sample", "time_s", "frame", "box_id", "source", "label", "edited", "status", "confidence",
-            "x1", "y1", "x2", "y2", "counted", "original_label", "original_x1", "original_y1", "original_x2", "original_y2"]
+            "x1", "y1", "x2", "y2", "grid_cell", "counted", "original_label", "original_x1", "original_y1", "original_x2", "original_y2"]
 
 
-def build_tables(video, res, boxes, thr, run_text):
+def grid_cell(cx, cy, rows=3, cols=3):
+    """A1, A2, B1... (letter = row from the top, number = column from the left)."""
+    r_ = min(max(int(cy * rows), 0), rows - 1)
+    c_ = min(max(int(cx * cols), 0), cols - 1)
+    return f"{chr(ord('A') + r_)}{c_ + 1}"
+
+
+def build_tables(video, res, boxes, thr, run_text, rows=3, cols=3):
     W, H = res["width"], res["height"]
     ann = []
     for b in boxes:
@@ -118,7 +125,9 @@ def build_tables(video, res, boxes, thr, run_text):
                "source": b["source"], "label": b["label"], "edited": "yes" if b["edited"] else "no", "status": b["status"],
                "confidence": "" if b["confidence"] is None else round(b["confidence"], 4),
                "x1": round(b["cur"]["x1"] * W), "y1": round(b["cur"]["y1"] * H), "x2": round(b["cur"]["x2"] * W),
-               "y2": round(b["cur"]["y2"] * H), "counted": "yes" if b["counted"] else "no",
+               "y2": round(b["cur"]["y2"] * H),
+               "grid_cell": grid_cell((b["cur"]["x1"] + b["cur"]["x2"]) / 2, (b["cur"]["y1"] + b["cur"]["y2"]) / 2, rows, cols),
+               "counted": "yes" if b["counted"] else "no",
                "original_label": "", "original_x1": "", "original_y1": "", "original_x2": "", "original_y2": ""}
         if b["source"] == "model" and b["edited"]:
             o = b["orig"]
@@ -141,15 +150,15 @@ def build_tables(video, res, boxes, thr, run_text):
                "ai_boxes_counted": sum(1 for b in ai if b["counted"]),
                "reviewer_boxes": sum(1 for b in boxes if b["source"] == "reviewer"),
                "boxes_rejected": sum(1 for b in boxes if b["status"] == "rejected"),
-               "boxes_edited": sum(1 for b in boxes if b["edited"]), "labels_used": labels_used(boxes)}
+               "boxes_edited": sum(1 for b in boxes if b["edited"]), "labels_used": labels_used(boxes), "grid": f"{rows}x{cols}"}
     return ann, frames, summary
 
 
-def write_exports(outdir, video, res, state, thr, run_text):
+def write_exports(outdir, video, res, state, thr, run_text, rows=3, cols=3):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     boxes = materialize(res, state, thr)
-    ann, frames, summary = build_tables(video, res, boxes, thr, run_text)
+    ann, frames, summary = build_tables(video, res, boxes, thr, run_text, rows, cols)
     for name, rows, cols in (("annotations.csv", ann, ANN_COLS), ("frames.csv", frames, list(frames[0].keys()) if frames else ["sample"]),
                              ("summary.csv", [summary], list(summary.keys()))):
         with open(outdir / name, "w", newline="", encoding="utf-8") as f:

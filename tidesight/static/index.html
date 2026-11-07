@@ -48,6 +48,7 @@
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
     <div class="startrow only-filters"><button class="primary" id="startBtn">▶ Start detection</button><span class="note">Happy with how the video looks? Start detection to find the fish.</span></div>
+    <div class="countbar needs" id="countbar"><span>Fish in this picture: <b id="cntNow">0</b></span><span class="cntdetail" id="cntDetail"></span><span class="cntpeak" id="cntPeak"></span></div>
     <div class="selbox needs" id="selbox">
       <div class="selrow"><label for="nameIn"><b>Name</b></label>
         <input type="text" id="nameIn" list="labelList" placeholder="fish" autocomplete="off" disabled><datalist id="labelList"></datalist>
@@ -96,6 +97,12 @@
 <aside class="side panel" id="side">
   <div class="sidehd"><h2>Video filters <small>chosen before detection</small></h2><button class="xbtn" id="fClose" title="Close (Esc)">✕</button></div>
   <div class="note" id="liveNote">Move a slider and the video changes right away (a quick preview). When you start detection, the app makes the exact filtered video and the fish finder watches that one.</div>
+  <div class="gridbox">
+    <label class="chk"><input type="checkbox" id="gridOn"> <b>Show a grid over the video</b></label>
+    <div class="gridsz"><label>Rows <input type="number" id="gridRows" min="1" max="12" value="3"></label>
+      <label>Columns <input type="number" id="gridCols" min="1" max="12" value="3"></label></div>
+    <div class="note">Cells are named A1, A2, B1… (letter = row from the top, number = column from the left), so you can say exactly where a fish is.</div>
+  </div>
   <div id="filters"></div>
   <div class="btnrow"><button id="resetF">Reset</button><button id="rerun" class="primary">Start detection</button></div>
   <div id="rrProg" class="hidden" style="margin-top:10px"><div id="rrTxt" class="note"></div><div class="bar"><i id="rrBar"></i></div></div>

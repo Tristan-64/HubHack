@@ -486,13 +486,13 @@ async def review_put(vid: str, request: Request, model: str = "nano", sample_fps
 
 
 @app.post("/api/export/{vid}")
-def export_reports(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = "", thr: float = 0.6):
+def export_reports(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = "", thr: float = 0.6, rows: int = 3, cols: int = 3):
     d = vdir(vid)
     c = parse_cfg(cfg)
     sid = settings_id(c)
     res = load_results(d, model, sample_fps, sid)
     st = review.load_state(sfile(d, model, sample_fps, sid))
-    files, summary = review.write_exports(outdir(d, vid), original_name(d, vid), res, st, thr, f"{model}; {describe_cfg(c)}")
+    files, summary = review.write_exports(outdir(d, vid), original_name(d, vid), res, st, thr, f"{model}; {describe_cfg(c)}", max(1, min(rows, 26)), max(1, min(cols, 26)))
     return {"folder": str(outdir(d, vid)), "files": files, "summary": summary}
 
 

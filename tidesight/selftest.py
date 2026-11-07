@@ -106,6 +106,8 @@ ok(a["m0-0"]["source"] == "model" and a["m0-0"]["edited"] == "yes" and a["m0-0"]
    and a["m0-0"]["original_x1"] == str(round(.1 * W)), "edited AI box row: source=model, edited=yes, new label, original box")
 ok(a["m0-1"]["status"] == "rejected", "rejected AI box is in annotations.csv as rejected")
 ok(a["m1-0"]["original_label"] == "" and a["m1-0"]["edited"] == "no", "unedited AI box has no original columns")
+ok(a["m0-0"]["grid_cell"] == "A1" and a["r1"]["grid_cell"] == "B2", "annotations.csv names the grid cell (A1, B2) of each box")
+ok(review.grid_cell(0.99, 0.99, 3, 3) == "C3" and review.grid_cell(0.5, 0.0, 2, 4) == "A3", "grid cells are lettered by row, numbered by column")
 fr = list(csv.DictReader(open(tmp_out / "frames.csv")))
 ok("edited" in fr[0] and fr[0]["edited"] == "1", "frames.csv has an edited count")
 sm = list(csv.DictReader(open(tmp_out / "summary.csv")))[0]
