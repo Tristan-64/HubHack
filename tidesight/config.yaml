@@ -1,0 +1,29 @@
+# TideSight settings
+# Every number here comes from Coastal Action's DRAFT Fish Video Analysis Protocol.
+# The protocol is still a draft, so change values here, not in the code.
+
+analysis_window:
+  skip_start_s: 60        # discard the first minute so sediment can settle (protocol: up to 240 s if still cloudy)
+  skip_end_s: 60          # discard the last minute
+  length_min: 15          # analyse a 15-minute segment (older draft used 12)
+
+subsampling:
+  interval_s: 60          # one subsample every 60 s -> 15 frames. Set to 15 for 60 frames (older draft).
+
+counting:
+  # Protocol: count fish visible within about 0.5 s either side of the subsample point.
+  # We check several frames inside that 1-second window and take the HIGHEST count
+  # seen in any single frame, so the same fish is never counted twice.
+  half_window_s: 0.5
+  frames_in_window: 5
+
+detector:
+  model: IDEA-Research/grounding-dino-tiny   # Apache 2.0, same model as VIAME's zero-shot pipeline
+  prompt: "fish."                             # lower case, each item ends with "."
+  count_threshold: 0.35   # boxes at or above this are COUNTED
+  review_threshold: 0.20  # boxes between review and count thresholds are FLAGGED for a person, not counted
+                          # (protocol: "when in doubt, don't count")
+
+validation:
+  max_percent_difference: 6   # protocol QC: two counts must be within 6%
+  min_agreement_percent: 95   # protocol QC: at least 95% of frames must agree

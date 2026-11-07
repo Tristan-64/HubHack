@@ -1,0 +1,13 @@
+# Coastal Action data stays private
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.THM
+data/
+outputs/
+human_counts.csv
+
+__pycache__/
+*.pyc
+.venv/
