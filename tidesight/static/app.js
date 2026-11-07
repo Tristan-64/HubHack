@@ -1,6 +1,9 @@
 const $ = id => document.getElementById(id);
 const MINC = 0.2;
-let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '', ORIG = null, RUNS = [], loadedCfg = null;
+let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '', ORIG = null, RUNS = [], loadedCfg = null, META = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const curModel = () => $('model').value, curRate = () => parseFloat($('sfps').value) || 2;
+const M = () => R || META || { duration: 1, fps: 30, width: 16, height: 9 };
 const vid = $('vid'), cv = $('cv'), ctx = cv.getContext('2d');
 
 // ---------- setup ----------
@@ -18,42 +21,45 @@ function showErr(msg) { $('err').textContent = msg; $('err').classList.toggle('h
 function setProg(txt, frac) { $('prog').classList.remove('hidden'); $('progtxt').textContent = txt; $('progbar').style.width = (frac * 100) + '%'; }
 
 function start(f) {
-  showErr(''); $('review').classList.add('hidden');
-  const model = $('model').value, sfps = parseFloat($('sfps').value) || 2;
-  const fd = new FormData(); fd.append('file', f); fd.append('model', model); fd.append('sample_fps', sfps);
+  showErr(''); $('review').classList.add('hidden'); R = null; ORIG = null; loadedCfg = null; META = null; momentsList = [];
+  const fd = new FormData(); fd.append('file', f);
   const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
   xhr.upload.onprogress = e => e.lengthComputable && setProg(`Adding your video… ${Math.round(e.loaded / e.total * 100)}%`, e.loaded / e.total);
   xhr.onerror = () => showErr('Could not reach the app. Is it still running?');
   xhr.onload = () => {
     if (xhr.status !== 200) return showErr('Upload failed: ' + (xhr.responseText || xhr.status));
-    const j = JSON.parse(xhr.responseText); VID = j.id; poll(j.id, j.model, j.sample_fps);
+    VID = JSON.parse(xhr.responseText).id; enterFilters();
   };
   xhr.send(fd);
 }
 
-async function poll(id, model, sfps) {
-  const q = `?model=${model}&sample_fps=${sfps}`;
+// Step 2: the video is ready, choose filters BEFORE any detection runs
+async function enterFilters() {
+  setProg('Getting your video ready to play…', 0.05);
+  let p;
   while (true) {
-    const s = await (await fetch(`/api/status/${id}${q}`)).json();
-    if (s.stage === 'error') { $('prog').classList.add('hidden'); return showErr(s.error || 'Something went wrong.'); }
-    if (s.stage === 'done') break;
-    if (s.stage === 'downloading') setProg(`Downloading the fish finder (first time only)… ${Math.round((s.dl || 0) * 100)}%`, s.dl || 0);
-    else if (s.stage === 'loading' || s.stage === 'unknown') setProg('Getting ready…', 0.02);
-    else setProg(`Analysing ${s.done} of ${s.total} frames${s.converting ? ' · preparing video for playback' : ''}`, s.total ? s.done / s.total : 0);
-    await new Promise(r => setTimeout(r, 600));
+    p = await (await fetch(`/api/prepare/${VID}`)).json();
+    if (p.stage === 'error') { $('prog').classList.add('hidden'); return showErr(p.error || 'Could not prepare the video.'); }
+    if (p.stage === 'ready') break;
+    await sleep(700);
   }
-  R = await (await fetch(`/api/results/${id}${q}`)).json();
   $('prog').classList.add('hidden');
-  await adopt(R, true);
-  load();
+  META = p; R = null; loadedCfg = null;
+  $('review').classList.remove('hidden'); $('review').classList.add('stage-filters');
+  $('usedNote').textContent = ''; $('dirtyNote').classList.add('hidden');
+  $('mdl').textContent = p.name || '';
+  $('rerun').textContent = 'Start detection';
+  vid.src = `/video/${VID}/${p.playable}`;
+  setSliders(DEF);
+  await loadRuns();
 }
 
 // ---------- review ----------
 function fmt(t, d = 2) { const m = Math.floor(t / 60), sec = t - m * 60; return String(m).padStart(2, '0') + ':' + sec.toFixed(d).padStart(2 + (d ? d + 1 : 0), '0'); }
 function load() {
-  $('review').classList.remove('hidden');
-  const src = `/video/${VID}/${R.playable}`;
-  if (!vid.src.endsWith(src)) vid.src = src;
+  $('review').classList.remove('hidden'); $('review').classList.remove('stage-filters');
+  $('rerun').textContent = 'Re-run detection with these settings';
+  applyPlayer();
   $('mdl').textContent = `${R.model} · ${R.sample_fps} pictures/sec`;
   $('sLen').textContent = fmt(R.duration, 0);
   $('sName').textContent = R.name || '–';
@@ -115,20 +121,20 @@ function nearest(t) {
   while (hi - lo > 1) { const mid = (lo + hi) >> 1; (S[mid].t <= t) ? lo = mid : hi = mid; }
   return (Math.abs(S[hi].t - t) < Math.abs(S[lo].t - t)) ? hi : lo;
 }
-function seek(t) { vid.currentTime = Math.max(0, Math.min(R.duration, t)); }
+function seek(t) { vid.currentTime = Math.max(0, Math.min(M().duration, t)); }
 
 function videoRect() {
-  const W = cv.clientWidth, H = cv.clientHeight, vw = vid.videoWidth || R.width, vh = vid.videoHeight || R.height;
+  const W = cv.clientWidth, H = cv.clientHeight, vw = vid.videoWidth || M().width, vh = vid.videoHeight || M().height;
   const sc = Math.min(W / vw, H / vh), w = vw * sc, h = vh * sc;
   return { x: (W - w) / 2, y: (H - h) / 2, w, h };
 }
 function draw() {
-  if (!R) return;
+  if (!R && !META) return;
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-  const t = vid.currentTime || 0, i = nearest(t), s = R.samples[i];
-  if (Math.abs(s.t - t) <= gap() * 1.01) {
+  const t = vid.currentTime || 0, i = R ? nearest(t) : 0, s = R ? R.samples[i] : null;
+  if (R && Math.abs(s.t - t) <= gap() * 1.01) {
     const vr = videoRect(); ctx.font = '600 13px -apple-system,Segoe UI,sans-serif'; ctx.textBaseline = 'top';
     s.boxes.forEach((b, idx) => {
       const ok = b[4] >= thr, col = ok ? '#14c4af' : '#f0b429';
@@ -141,9 +147,9 @@ function draw() {
     });
   }
   // readouts
-  $('time').textContent = `${fmt(t, 2)} · frame ${Math.round(t * R.fps)}`;
-  $('head').style.left = (t / R.duration * 100) + '%';
-  if (!scrubbing) $('scrub').value = t / R.duration * 1000;
+  $('time').textContent = `${fmt(t, 2)} · frame ${Math.round(t * M().fps)}`;
+  $('head').style.left = (t / M().duration * 100) + '%';
+  if (!scrubbing) $('scrub').value = t / M().duration * 1000;
   const k = momentsList.findIndex(m => i >= m.start && i <= m.end);
   document.querySelectorAll('#moments .row').forEach(r => r.classList.toggle('on', +r.dataset.k === k));
   $('play').textContent = vid.paused ? '▶ Play' : '⏸ Pause';
@@ -153,7 +159,7 @@ let scrubbing = false;
 
 $('play').onclick = () => vid.paused ? vid.play() : vid.pause();
 vid.onclick = $('play').onclick;
-$('scrub').oninput = e => { scrubbing = true; seek(e.target.value / 1000 * R.duration); };
+$('scrub').oninput = e => { scrubbing = true; seek(e.target.value / 1000 * M().duration); };
 $('scrub').onchange = () => scrubbing = false;
 $('tl').onclick = e => { const r = $('tl').getBoundingClientRect(); seek((e.clientX - r.left) / r.width * R.duration); };
 $('stepB').onclick = () => { vid.pause(); seek(R.samples[Math.max(0, nearest(vid.currentTime) - 1)].t); };
@@ -229,7 +235,7 @@ const DEF = {}; FILTERS.forEach(f => { if (f[1]) DEF[f[0]] = f[5]; });
 let cfg = { ...DEF };
 const isDef = c => Object.keys(DEF).every(k => Math.abs((c[k] ?? DEF[k]) - DEF[k]) < 1e-9);
 const cfgParam = c => isDef(c) ? '' : `&cfg=${encodeURIComponent(JSON.stringify(c))}`;
-const baseQ = () => `?model=${R.model}&sample_fps=${R.sample_fps}`;
+const baseQ = () => `?model=${curModel()}&sample_fps=${curRate()}`;
 const sameCfg = (a, b) => Object.keys(DEF).every(k => Math.abs((a[k] ?? DEF[k]) - (b[k] ?? DEF[k])) < 1e-6);
 
 (function buildFilters() {
@@ -248,37 +254,58 @@ function setSliders(c) {
 }
 let pvTimer = null;
 function filtersChanged() {
-  if (!R) return;
-  $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg || DEF));
-  clearTimeout(pvTimer); pvTimer = setTimeout(() => { updatePreview(); if (baOn) fetchCompare(); }, 300);
+  updateSvg(); applyPlayer();
+  if (R) $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg || DEF));
+  clearTimeout(pvTimer); pvTimer = setTimeout(() => { if (baOn) fetchCompare(); }, 300);
 }
-function updatePreview() {
-  if (!R) return;
-  $('pvImg').src = `/api/preview/${VID}?t=${(vid.currentTime || 0).toFixed(3)}${cfgParam(cfg)}`;
+vid.addEventListener('seeked', () => { if (vid.paused && baOn) fetchCompare(); });
+vid.addEventListener('pause', () => { if (baOn) fetchCompare(); });
+
+// Quick (approximate) live preview on the playing video via an SVG filter.
+// Local contrast and denoise can't be done live; they are in the rendered filtered video.
+function updateSvg() {
+  const c = { ...DEF, ...cfg }, set = (id, sel, attrs) => document.querySelectorAll(`#${id} ${sel}`).forEach(e => Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v)));
+  set('vf_bc', '*', { slope: c.contrast, intercept: c.brightness / 255 });
+  set('vf_g', '*', { exponent: 1 / c.gamma });
+  $('vf_sat').setAttribute('values', c.saturation);
+  const f = c.warmth / 100; $('vf_warm').setAttribute('values', `${1 + f} 0 0 0 0  0 1 0 0 0  0 0 ${1 - f} 0 0  0 0 0 1 0`);
+  const a = c.sharpen * 0.4; $('vf_sh').setAttribute('kernelMatrix', `0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0`);
 }
-vid.addEventListener('seeked', () => { if (vid.paused) { updatePreview(); if (baOn) fetchCompare(); } });
-vid.addEventListener('pause', () => { updatePreview(); if (baOn) fetchCompare(); });
+// Which file the player shows: the exact filtered video when the sliders match the results, else the original + quick preview.
+function applyPlayer() {
+  const exact = !!(R && R.filtered && loadedCfg && sameCfg(cfg, loadedCfg));
+  const name = exact ? R.filtered : (R ? R.playable : META && META.playable);
+  if (!name) return;
+  const want = `/video/${VID}/${name}`;
+  if (!vid.src.endsWith(want)) {
+    const t = vid.currentTime, paused = vid.paused;
+    vid.src = want;
+    vid.addEventListener('loadedmetadata', () => { vid.currentTime = t; if (!paused) vid.play(); }, { once: true });
+  }
+  vid.style.filter = (!exact && !isDef(cfg)) ? 'url(#vf)' : 'none';
+}
 $('resetF').onclick = () => setSliders(DEF);
 
 // Take a results object as "the results shown"
 async function adopt(res, first) {
   R = res; loadedCfg = { ...DEF, ...(res.settings || {}) };
-  QS = baseQ() + cfgParam(loadedCfg);
+  $('model').value = res.model; $('sfps').value = res.sample_fps;
+  QS = `?model=${res.model}&sample_fps=${res.sample_fps}` + cfgParam(loadedCfg);
   if (first) setSliders(loadedCfg); else { $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg)); }
   $('usedNote').innerHTML = `Results shown used: <b>${res.settings_text || 'Original (no changes)'}</b>`;
   if (isDef(loadedCfg)) ORIG = res;
   else if (!ORIG || ORIG.model !== res.model || ORIG.sample_fps !== res.sample_fps) {
-    try { const r = await fetch(`/api/results/${VID}${baseQ()}`); ORIG = r.ok ? await r.json() : null; } catch { ORIG = null; }
+    try { const r = await fetch(`/api/results/${VID}?model=${res.model}&sample_fps=${res.sample_fps}`); ORIG = r.ok ? await r.json() : null; } catch { ORIG = null; }
   }
   await loadRuns();
 }
 async function loadRuns() {
-  RUNS = (await (await fetch(`/api/runs/${VID}`)).json()).filter(r => r.model === R.model && r.sample_fps === R.sample_fps);
-  const cur = RUNS.findIndex(r => sameCfg(r.cfg, loadedCfg));
-  $('runs').innerHTML = RUNS.map((r, i) => `<option value="${i}">${r.text}</option>`).join('');
+  RUNS = (await (await fetch(`/api/runs/${VID}`)).json()).filter(r => r.model === curModel() && r.sample_fps === curRate());
+  const cur = R ? RUNS.findIndex(r => sameCfg(r.cfg, loadedCfg)) : -1;
+  $('runs').innerHTML = `<option value="-1">${RUNS.length ? (R ? '(pick one to switch)' : 'None picked: choose filters below') : 'None yet'}</option>` + RUNS.map((r, i) => `<option value="${i}">${r.text}</option>`).join('');
   $('runs').value = cur;
 }
-$('runs').onchange = e => { const r = RUNS[+e.target.value]; setSliders(r.cfg); rerun(); };
+$('runs').onchange = e => { const r = RUNS[+e.target.value]; if (!r) return; setSliders(r.cfg); rerun(); };
 
 async function rerun() {
   const btn = $('rerun'); btn.disabled = true;
@@ -291,13 +318,15 @@ async function rerun() {
         const s = await (await fetch(`/api/status/${VID}${q}`)).json();
         if (s.stage === 'error') { $('rrTxt').textContent = s.error; return; }
         if (s.stage === 'done') break;
-        $('rrTxt').textContent = s.stage === 'analysing' ? `Analysing ${s.done} of ${s.total} frames` : 'Getting ready…';
-        $('rrBar').style.width = (s.total ? s.done / s.total * 100 : 2) + '%';
+        $('rrTxt').textContent = s.stage === 'rendering' ? `Preparing the filtered video: ${s.done} of ${s.total} frames`
+          : s.stage === 'analysing' ? `Analysing ${s.done} of ${s.total} frames`
+          : s.stage === 'downloading' ? `Downloading the fish finder (first time only)… ${Math.round((s.dl || 0) * 100)}%` : 'Getting ready…';
+        $('rrBar').style.width = (s.stage === 'downloading' ? (s.dl || 0) * 100 : s.total ? s.done / s.total * 100 : 2) + '%';
         await new Promise(r => setTimeout(r, 700));
       }
     }
     const res = await (await fetch(`/api/results/${VID}${q}`)).json();
-    await adopt(res, false); recompute();
+    await adopt(res, false); load();
   } finally { btn.disabled = false; $('rrProg').classList.add('hidden'); }
 }
 $('rerun').onclick = rerun;
@@ -330,7 +359,7 @@ async function fetchCompare() {
   const tok = ++baToken, t = vid.currentTime || 0;
   $('baBtn').textContent = '◧ Working…';
   try {
-    const r = await fetch(`/api/compare/${VID}?t=${t.toFixed(3)}&model=${R.model}${cfgParam(cfg)}`);
+    const r = await fetch(`/api/compare/${VID}?t=${t.toFixed(3)}&model=${curModel()}${cfgParam(cfg)}`);
     if (!r.ok || tok !== baToken) return;
     const d = await r.json();
     await Promise.all([['baO', 'baOc', d.original], ['baE', 'baEc', d.enhanced]].map(([i, c, x]) => new Promise(res => {

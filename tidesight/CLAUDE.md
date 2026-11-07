@@ -7,7 +7,7 @@
 
 # The app
 One local web page (FastAPI + static HTML/JS) on http://127.0.0.1:8000 (bind 127.0.0.1 only).
-Upload an underwater video -> Community Fish Detector (RF-DETR Nano default, Small optional,
+Upload -> choose video filters (before any detection) -> Start detection -> Community Fish Detector (RF-DETR Nano default, Small optional,
 YOLOv12x via Ultralytics as fallback) -> review the original video with a transparent canvas of
 boxes + confidence, a shaded fish timeline, a confidence slider and a "fish moments" list.
 No species, no reports, no grids. Use the Mac GPU (mps) with CPU fallback.

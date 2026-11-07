@@ -53,3 +53,4 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .ba{display:grid;grid-template-columns:1fr 1fr;gap:10px}.ba figure{margin:0}.ba figcaption{text-align:center;font-size:13px;color:var(--muted);margin-top:4px}
 .bawrap{position:relative;background:#06161a;border-radius:8px;overflow:hidden;min-height:80px}.bawrap img{display:block;width:100%}.bawrap canvas{position:absolute;inset:0;width:100%;height:100%}
 #baBtn.on{background:var(--teal);color:#fff;border-color:var(--teal)}
+#review.stage-filters .needs{display:none!important}

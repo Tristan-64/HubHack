@@ -31,3 +31,9 @@
 - app.py: cfg plumbing (results_<model>_<fps>[_<settingsid>].json, "" id = original), new /api/analyse, /api/runs, /api/preview, /api/compare; detector.py: lock around detect()
 - static/: side panel (filters, preview, Reset, Re-run, saved runs), Before/after, comparison line
 - Tested with FastAPI TestClient + real Nano model on a synthetic video: identity at defaults, every filter changes output, cached re-run, runs list, preview JPEG, compare. Browser UI not tested (no browser here). No pip installs; test uploads removed.
+
+## Filters moved onto the video, chosen before detection
+- Upload no longer starts detection; /api/prepare makes the playable copy; "Start detection" calls /api/analyse
+- app.py: ensure_filtered() renders filtered_<id>.mp4 (OpenCV -> enhance_frame -> ffmpeg pipe, libx264 veryfast, no audio); detector reads the filtered file; render_only() backfills older runs; removed /api/preview
+- static/: live SVG-filter preview on the <video> (approximate), exact filtered video once results exist, "stage-filters" layout before detection
+- Tested via TestClient with the real Nano model: upload starts no detection, filtered video has same frame count/size, cached re-run, default cfg skips rendering, backfill, species path still importable. Browser UI not tested. No pip installs; test uploads removed.

@@ -1,9 +1,18 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fish footage reviewer</title><link rel="stylesheet" href="/static/style.css"></head>
-<body><div class="wrap">
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<filter id="vf" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+ <feComponentTransfer id="vf_bc"><feFuncR type="linear" slope="1" intercept="0"/><feFuncG type="linear" slope="1" intercept="0"/><feFuncB type="linear" slope="1" intercept="0"/></feComponentTransfer>
+ <feComponentTransfer id="vf_g"><feFuncR type="gamma" amplitude="1" exponent="1" offset="0"/><feFuncG type="gamma" amplitude="1" exponent="1" offset="0"/><feFuncB type="gamma" amplitude="1" exponent="1" offset="0"/></feComponentTransfer>
+ <feColorMatrix id="vf_sat" type="saturate" values="1"/>
+ <feColorMatrix id="vf_warm" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+ <feConvolveMatrix id="vf_sh" order="3" kernelMatrix="0 0 0 0 1 0 0 0 0" divisor="1" preserveAlpha="true"/>
+</filter></defs></svg>
+<div class="wrap">
 <h1>🐟 Fish footage reviewer</h1>
-<p class="sub">Add an underwater video and the computer will mark where the fish are. Your video stays on this computer.</p>
+<p class="sub">1) Add an underwater video. 2) Choose how it should be filtered. 3) Start detection and the computer marks where the fish are. Your video stays on this computer.</p>
 
 <section class="panel" id="upload">
   <div class="drop" id="drop"><b>Drop a video here</b><br>or click to choose a file (mp4, mov, m4v, avi)</div>
@@ -17,7 +26,7 @@
 </section>
 
 <div id="review" class="hidden"><div class="layout"><div class="main">
-  <section class="panel"><div class="stats">
+  <section class="panel needs"><div class="stats">
     <div class="stat"><b id="sLen">–</b><span>Video length</span></div>
     <div class="stat"><b id="sSkip">–</b><span>With no fish (can be skipped)</span></div>
     <div class="stat"><b id="sMom">–</b><span>Fish moments</span></div>
@@ -30,19 +39,19 @@
     <div class="stage" id="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas></div>
     <div class="ctrls">
       <button class="primary" id="play">▶ Play</button>
-      <button id="prevFish">⏮ Previous fish</button><button id="nextFish">Next fish ⏭</button>
+      <button id="prevFish" class="needs">⏮ Previous fish</button><button id="nextFish" class="needs">Next fish ⏭</button>
       <button id="baBtn" title="Compare the paused picture with and without your filters">◧ Before / after</button>
-      <button id="stepB" title="Back one checked picture">◀ Step</button><button id="stepF" title="Forward one checked picture">Step ▶</button>
+      <button id="stepB" class="needs" title="Back one checked picture">◀ Step</button><button id="stepF" class="needs" title="Forward one checked picture">Step ▶</button>
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
     <input type="range" id="scrub" min="0" max="1000" value="0">
-    <div class="tl" id="tl"><div class="head" id="head"></div></div>
-    <div class="tl-l"><span>0 s</span><span id="endlab"></span></div>
-    <div class="note">Shaded = frames with fish. Everything else is skipped.</div>
-    <div class="key"><span><i style="background:var(--teal)"></i>Confident fish</span><span><i style="background:var(--amber)"></i>Worth a second look</span></div>
-    <div class="conf"><label for="conf">Count fish at confidence of at least <span id="confv">0.60</span></label>
+    <div class="tl needs" id="tl"><div class="head" id="head"></div></div>
+    <div class="tl-l needs"><span>0 s</span><span id="endlab"></span></div>
+    <div class="note needs">Shaded = frames with fish. Everything else is skipped.</div>
+    <div class="key needs"><span><i style="background:var(--teal)"></i>Confident fish</span><span><i style="background:var(--amber)"></i>Worth a second look</span></div>
+    <div class="conf needs"><label for="conf">Count fish at confidence of at least <span id="confv">0.60</span></label>
       <input type="range" id="conf" min="0.2" max="0.95" step="0.05" value="0.6"></div>
-    <div class="spbox">
+    <div class="spbox needs">
       <div class="sprow">
         <div class="menu"><button id="spBtn">🔬 Identify species (AI) ▾</button>
           <div class="menuitems hidden" id="spMenu"><button id="spFrame">This frame</button><button id="spAll">Whole video</button></div></div>
@@ -55,22 +64,21 @@
     </div>
   </section>
 
-  <section class="panel hidden" id="spSum"><h2>Species suggestions <small>AI guesses, please check by eye</small></h2><div id="spChips"></div>
+  <section class="panel hidden needs" id="spSum"><h2>Species suggestions <small>AI guesses, please check by eye</small></h2><div id="spChips"></div>
     <div class="note">Counts are fish <i>sightings</i> in the checked pictures, so one fish seen in several pictures is counted more than once.</div></section>
 
-  <section class="panel moments"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
+  <section class="panel moments needs"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>
 </div>
 <aside class="side panel" id="side">
-  <h2>Picture filters <small>what the fish finder sees</small></h2>
-  <img id="pvImg" class="pv" alt="Filter preview">
-  <div class="note" id="pvNote">This is the paused picture with your filters. The fish finder gets exactly this picture.</div>
+  <h2>Video filters <small>chosen before detection</small></h2>
+  <div class="note" id="liveNote">Move a slider and the video on the left changes right away (a quick preview). When you start detection, the app makes the exact filtered video and the fish finder watches that one.</div>
   <div id="filters"></div>
-  <div class="btnrow"><button id="resetF">Reset</button><button id="rerun" class="primary">Re-run detection with these settings</button></div>
+  <div class="btnrow"><button id="resetF">Reset</button><button id="rerun" class="primary">Start detection</button></div>
   <div id="rrProg" class="hidden" style="margin-top:10px"><div id="rrTxt" class="note"></div><div class="bar"><i id="rrBar"></i></div></div>
   <div class="note" id="usedNote"></div>
   <div class="note warn hidden" id="dirtyNote">The sliders are different from the results you are looking at. Click “Re-run detection” to use them.</div>
-  <label class="runsl">Saved runs <select id="runs"></select></label>
-  <div class="note">Denoise is slow: it makes re-running take much longer.</div>
+  <label class="runsl">Saved results for this video <select id="runs"></select></label>
+  <div class="note">The quick preview can’t show <b>Local contrast</b> or <b>Denoise</b>; they appear in the filtered video. Denoise makes preparing the video much slower.</div>
 </aside></div>
 </div><script src="/static/app.js"></script></body></html>

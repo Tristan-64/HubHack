@@ -95,6 +95,74 @@ def make_playable(d, orig, job):
     job["converting"] = False
 
 
+def ensure_filtered(job, d, orig, cfg):
+    """Render the whole video through enhance_frame -> filtered_<id>.mp4 (what the detector will see)."""
+    sid = settings_id(cfg)
+    if not sid:
+        return None
+    out = d / f"filtered_{sid}.mp4"
+    if out.exists():
+        return out.name
+    import imageio_ffmpeg
+    cap = cv2.VideoCapture(str(orig))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    ok, frame = cap.read()
+    if not ok:
+        raise RuntimeError("Could not read the video.")
+    h, w = frame.shape[:2]
+    tmp = d / f"filtered_{sid}.tmp.mp4"
+    cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", f"{fps}",
+           "-i", "-", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+           "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", str(tmp)]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    job.update(stage="rendering", done=0, total=total)
+    n = 0
+    try:
+        while ok:
+            proc.stdin.write(enhance_frame(frame, cfg).tobytes())
+            n += 1
+            job["done"] = n
+            ok, frame = cap.read()
+    finally:
+        cap.release()
+        proc.stdin.close()
+        rc = proc.wait()
+    if rc != 0:
+        raise RuntimeError("Could not make the filtered video.")
+    tmp.rename(out)
+    return out.name
+
+
+def render_only(key, d, orig, model, sample_fps, cfg):
+    job = JOBS[key]
+    try:
+        name = ensure_filtered(job, d, orig, cfg)
+        p = rfile(d, model, sample_fps, settings_id(cfg))
+        with RES_LOCK:
+            r = json.loads(p.read_text())
+            r["filtered"] = name
+            p.write_text(json.dumps(r))
+        job.update(stage="done")
+    except Exception as e:
+        traceback.print_exc()
+        job.update(stage="error", error=friendly(e))
+
+
+PREP = {}
+
+
+def prepare(vid, d, orig):
+    PREP[vid] = {"stage": "converting"}
+    try:
+        job = {}
+        make_playable(d, orig, job)
+        PREP[vid] = {"stage": "ready", "playable": job["playable"]}
+    except Exception as e:
+        traceback.print_exc()
+        PREP[vid] = {"stage": "error", "error": friendly(e)}
+
+
 def analyse(key, d, orig, model, sample_fps, cfg):
     job = JOBS[key]
     sid = settings_id(cfg)
@@ -106,10 +174,13 @@ def analyse(key, d, orig, model, sample_fps, cfg):
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         duration = nframes / fps
         total = int(duration * sample_fps) + 1
-        job.update(total=total, done=0)
+        cap.release()
         conv_err = []
         t = threading.Thread(target=lambda: _safe(make_playable, conv_err, d, orig, job))
         t.start()
+        filtered = ensure_filtered(job, d, orig, cfg)  # exact filtered video (None = no filters)
+        cap = cv2.VideoCapture(str(d / filtered if filtered else orig))
+        job.update(total=total, done=0)
         job["stage"] = "loading"
         det = detector.get_detector(model, progress=lambda a, b: job.update(stage="downloading" if a < b else "loading", dl=a / b))
         job["stage"] = "analysing"
@@ -127,7 +198,7 @@ def analyse(key, d, orig, model, sample_fps, cfg):
             if not ok:
                 break
             fi += 1
-            boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(enhance_frame(frame, cfg))]
+            boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(frame)]
             samples.append({"t": round(target / fps, 3), "frame": target, "boxes": boxes})
             next_i += 1
             job["done"] = next_i
@@ -136,7 +207,7 @@ def analyse(key, d, orig, model, sample_fps, cfg):
         if conv_err:
             raise conv_err[0]
         res = {"model": model, "sample_fps": sample_fps, "min_conf": detector.MIN_CONF, "duration": duration,
-               "fps": fps, "frames": nframes, "width": w, "height": h, "settings": cfg, "samples": samples, "playable": job["playable"]}
+               "fps": fps, "frames": nframes, "width": w, "height": h, "settings": cfg, "filtered": filtered, "samples": samples, "playable": job["playable"]}
         out.write_text(json.dumps(res))
         job.update(stage="done", done=len(samples), total=len(samples))
     except Exception as e:
@@ -161,12 +232,8 @@ def friendly(e):
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), model: str = Form("nano"), sample_fps: float = Form(2.0), cfg: str = Form("")):
-    cfg = parse_cfg(cfg)
-    sid = settings_id(cfg)
-    if model not in detector.MODELS:
-        raise HTTPException(400, "unknown model")
-    sample_fps = max(0.1, min(float(sample_fps), 30.0))
+async def upload(file: UploadFile = File(...)):
+    """Only saves the video and prepares a playable copy. Detection starts later, after the filters are chosen."""
     tmpdir = UPLOADS / "_incoming"
     tmpdir.mkdir(exist_ok=True)
     tmp = tmpdir / (hashlib.md5(file.filename.encode()).hexdigest() + ".part")
@@ -184,15 +251,28 @@ async def upload(file: UploadFile = File(...), model: str = Form("nano"), sample
         (d / "name.txt").write_text(file.filename)
     else:
         tmp.unlink()
+    if PREP.get(vid, {}).get("stage") not in ("converting", "ready"):
+        threading.Thread(target=prepare, args=(vid, d, original_path(d)), daemon=True).start()
+    return {"id": vid}
+
+
+@app.get("/api/prepare/{vid}")
+def prepare_status(vid: str):
+    d = vdir(vid)
     orig = original_path(d)
-    key = jkey(vid, model, sample_fps, sid)
-    cached = rfile(d, model, sample_fps, sid)
-    if cached.exists():
-        JOBS[key] = {"stage": "done", "cached": True}
-    elif JOBS.get(key, {}).get("stage") not in ("loading", "downloading", "analysing"):
-        JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
-        threading.Thread(target=analyse, args=(key, d, orig, model, sample_fps, cfg), daemon=True).start()
-    return {"id": vid, "key": key, "model": model, "sample_fps": sample_fps}
+    if vid not in PREP:
+        threading.Thread(target=prepare, args=(vid, d, orig), daemon=True).start()
+        PREP[vid] = {"stage": "converting"}
+    st = dict(PREP[vid])
+    if st["stage"] == "ready":
+        cap = cv2.VideoCapture(str(orig))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        st.update(duration=n / fps, fps=fps, width=int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), height=int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        cap.release()
+        nm = d / "name.txt"
+        st["name"] = nm.read_text() if nm.exists() else ""
+    return st
 
 
 @app.get("/api/status/{vid}")
@@ -200,6 +280,8 @@ def status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""
     d = vdir(vid)
     sid = settings_id(parse_cfg(cfg))
     key = jkey(vid, model, sample_fps, sid)
+    if JOBS.get(key, {}).get("stage") in ("rendering", "loading", "downloading", "analysing"):
+        return JOBS[key]
     if rfile(d, model, sample_fps, sid).exists():
         return {"stage": "done"}
     return JOBS.get(key, {"stage": "unknown"})
@@ -239,7 +321,9 @@ def run_species(key, d, orig, model, sample_fps, conf, only, cfg):
         if todo:
             species._classifier()
         job["stage"] = "analysing"
-        cap = cv2.VideoCapture(str(orig))
+        fname = res.get("filtered")
+        use_filtered = bool(fname) and (d / fname).exists()
+        cap = cv2.VideoCapture(str(d / fname if use_filtered else orig))
         w, h = res["width"], res["height"]
         fi = 0
         for n, (i, need) in enumerate(todo):
@@ -254,7 +338,8 @@ def run_species(key, d, orig, model, sample_fps, conf, only, cfg):
             ok, frame = cap.read()
             fi += 1
             if ok:
-                frame = enhance_frame(frame, cfg)
+                if not use_filtered:
+                    frame = enhance_frame(frame, cfg)
                 crops = {j: species.crop(frame, S[i]["boxes"][j], w, h) for j in need}
                 valid = [j for j, c in crops.items() if c is not None]
                 preds = species.classify([crops[j] for j in valid])
@@ -312,10 +397,16 @@ def analyse_again(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: s
     d = vdir(vid)
     sid = settings_id(cfg)
     key = jkey(vid, model, sample_fps, sid)
-    if rfile(d, model, sample_fps, sid).exists():
-        return {"cached": True}
-    if JOBS.get(key, {}).get("stage") in ("loading", "downloading", "analysing"):
+    if JOBS.get(key, {}).get("stage") in ("loading", "downloading", "analysing", "rendering"):
         return {"cached": False, "started": False}
+    p = rfile(d, model, sample_fps, sid)
+    if p.exists():
+        r = json.loads(p.read_text())
+        if not sid or (r.get("filtered") and (d / r["filtered"]).exists()):
+            return {"cached": True}
+        JOBS[key] = {"stage": "rendering", "done": 0, "total": 0}  # older run: make its filtered video
+        threading.Thread(target=render_only, args=(key, d, original_path(d), model, sample_fps, cfg), daemon=True).start()
+        return {"cached": False, "started": True}
     JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
     threading.Thread(target=analyse, args=(key, d, original_path(d), model, sample_fps, cfg), daemon=True).start()
     return {"cached": False, "started": True}
@@ -337,18 +428,6 @@ def _jpeg(img, maxw=None):
         img = cv2.resize(img, (maxw, int(img.shape[0] * maxw / img.shape[1])), interpolation=cv2.INTER_AREA)
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
     return buf.tobytes()
-
-
-@app.get("/api/preview/{vid}")
-def preview(vid: str, t: float = 0.0, cfg: str = ""):
-    """The enhanced frame, produced by the same enhance_frame the detector uses."""
-    orig = original_path(vdir(vid))
-    cap = cv2.VideoCapture(str(orig))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    cap.release()
-    frame = enhance_frame(read_frame(orig, round(t * fps)), parse_cfg(cfg))
-    from fastapi.responses import Response
-    return Response(_jpeg(frame, 800), media_type="image/jpeg")
 
 
 @app.get("/api/compare/{vid}")
