@@ -41,3 +41,11 @@
 ## Filter panel as a slide-out drawer
 - static/: removed the 2-column layout; #side is now a fixed right-edge drawer (Filters button, edge tab, ✕, Esc, scrim on narrow screens), opens automatically for the filter step and during runs, closes after results; "changed" badge when sliders differ from loaded results; extra "Start detection" button under the video in the filter step
 - Checked: node syntax, DOM-id cross-check, app restarted and serving. Browser UI not tested here. No installs.
+
+## Reviewer box editing (names, move, resize, delete/restore)
+- Spec adapted: the pasted spec named files that do not exist here (review_component/, pipeline.py, PowerShell...); built on this FastAPI app instead. Fish-database part ignored on request.
+- New: review.py (state, materialize, CSV exports, outlined video), static/boxes.js (model), static/editor.js (pointer/keyboard), tests/boxes_node_test.js, selftest.py, component_test.py + static/test_editor.html
+- app.py: /api/review (GET/PUT), /api/export, /api/outline + /api/outline_status, /download/<id>/<file>; state per run in uploads/<id>/review_<model>_<fps>[_<sid>].json; exports in outputs/<video stem>/
+- static/: Name box + Delete/Restore/Reset/Undo bar, tick row, Boxes list (Name column, "Boxes I edited" filter), stats (AI boxes edited, Boxes I drew), Save report / outlined video buttons; fish moments/timeline now use effective boxes (rejected removed, own added)
+- Bug found by tests and fixed: rejecting an untouched AI box was silently undone by the "unedited again" clean-up (boxes.js ensureAI)
+- Tests run: python selftest.py -> 34 checks passed; python component_test.py -> ALL PASS 11 (headless Chrome); real page loads in headless Chrome with no console errors. No pip installs.

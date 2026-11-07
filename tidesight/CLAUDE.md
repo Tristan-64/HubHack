@@ -10,6 +10,10 @@ One local web page (FastAPI + static HTML/JS) on http://127.0.0.1:8000 (bind 127
 Upload -> choose video filters (before any detection) -> Start detection -> Community Fish Detector (RF-DETR Nano default, Small optional,
 YOLOv12x via Ultralytics as fallback) -> review the original video with a transparent canvas of
 boxes + confidence, a shaded fish timeline, a confidence slider and a "fish moments" list.
-No species, no reports, no grids. Use the Mac GPU (mps) with CPU fallback.
-Files: app.py (FastAPI), detector.py, static/index.html, static/app.js, static/style.css.
+RULE (replaces the old "no species"): the AI only ever detects "fish" and never names species. Human reviewers may type a name on
+any box (select, rename, move, resize, delete; AI boxes are "rejected", not erased) and the reports/outlined video carry those names.
+The optional BioCLIP species *suggestions* (species.py, requirements-ai.txt) stay separate and never write box names. No hosted AI.
+Use the Mac GPU (mps) with CPU fallback. Commands are for macOS/zsh.
+Files: app.py (FastAPI), detector.py, review.py (edits, CSV, outlined video), static/index.html, app.js, boxes.js, editor.js, style.css.
+Tests: selftest.py (Python + Node), component_test.py (headless Chrome, static/test_editor.html), tests/boxes_node_test.js.
 Old Streamlit prototype lives in streamlit_app.py (+ detect.py, video.py, etc.); not used by this app.

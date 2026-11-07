@@ -10,11 +10,12 @@ from pathlib import Path
 
 import cv2
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import detector
+import review
 import species
 from enhance import describe_cfg, enhance_frame, normalize_cfg, settings_id
 
@@ -447,6 +448,103 @@ def compare(vid: str, t: float = 0.0, model: str = "nano", cfg: str = ""):
         boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(img)]
         out[name] = {"img": "data:image/jpeg;base64," + base64.b64encode(_jpeg(img, 1000)).decode(), "boxes": boxes}
     return out
+
+
+# ---------------------------------------------------------------- reviewer edits
+OUTPUTS = ROOT / "outputs"
+
+
+def sfile(d, model, fps, sid=""):
+    return d / (f"review_{model}_{fps:g}.json" if not sid else f"review_{model}_{fps:g}_{sid}.json")
+
+
+def load_results(d, model, fps, sid):
+    p = rfile(d, model, fps, sid)
+    if not p.exists():
+        raise HTTPException(404, "results not ready")
+    return json.loads(p.read_text())
+
+
+def outdir(d, vid):
+    nm = d / "name.txt"
+    stem = re.sub(r"[^\w.-]+", "_", Path(nm.read_text()).stem if nm.exists() else vid) or vid
+    return OUTPUTS / stem
+
+
+@app.get("/api/review/{vid}")
+def review_get(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
+    d = vdir(vid)
+    return review.load_state(sfile(d, model, sample_fps, settings_id(parse_cfg(cfg))))
+
+
+@app.put("/api/review/{vid}")
+async def review_put(vid: str, request: Request, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
+    d = vdir(vid)
+    body = await request.json()
+    review.save_state(sfile(d, model, sample_fps, settings_id(parse_cfg(cfg))), body)
+    return {"saved": True}
+
+
+@app.post("/api/export/{vid}")
+def export_reports(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = "", thr: float = 0.6):
+    d = vdir(vid)
+    c = parse_cfg(cfg)
+    sid = settings_id(c)
+    res = load_results(d, model, sample_fps, sid)
+    st = review.load_state(sfile(d, model, sample_fps, sid))
+    files, summary = review.write_exports(outdir(d, vid), original_name(d, vid), res, st, thr, f"{model}; {describe_cfg(c)}")
+    return {"folder": str(outdir(d, vid)), "files": files, "summary": summary}
+
+
+def original_name(d, vid):
+    nm = d / "name.txt"
+    return nm.read_text() if nm.exists() else vid
+
+
+def run_outline(key, d, vid, model, sample_fps, cfg, thr):
+    job = JOBS[key]
+    try:
+        sid = settings_id(cfg)
+        res = load_results(d, model, sample_fps, sid)
+        st = review.load_state(sfile(d, model, sample_fps, sid))
+        boxes = review.materialize(res, st, thr)
+        fname = res.get("filtered")
+        src = d / fname if fname and (d / fname).exists() else original_path(d)
+        job.update(stage="rendering", done=0, total=1)
+        review.outline_video(src, res, boxes, outdir(d, vid) / "outlined.mp4",
+                             progress=lambda a, b: job.update(done=a, total=b))
+        job.update(stage="done")
+    except Exception as e:
+        traceback.print_exc()
+        job.update(stage="error", error=friendly(e))
+
+
+@app.post("/api/outline/{vid}")
+def outline_start(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = "", thr: float = 0.6):
+    d = vdir(vid)
+    c = parse_cfg(cfg)
+    key = jkey(vid, model, sample_fps, settings_id(c), "_outline")
+    if JOBS.get(key, {}).get("stage") == "rendering":
+        return {"started": False}
+    JOBS[key] = {"stage": "rendering", "done": 0, "total": 1}
+    threading.Thread(target=run_outline, args=(key, d, vid, model, sample_fps, c, thr), daemon=True).start()
+    return {"started": True}
+
+
+@app.get("/api/outline_status/{vid}")
+def outline_status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
+    return JOBS.get(jkey(vid, model, sample_fps, settings_id(parse_cfg(cfg)), "_outline"), {"stage": "idle"})
+
+
+@app.get("/download/{vid}/{name}")
+def download(vid: str, name: str):
+    d = vdir(vid)
+    if name not in ("annotations.csv", "frames.csv", "summary.csv", "review_state.json", "outlined.mp4"):
+        raise HTTPException(404)
+    p = outdir(d, vid) / name
+    if not p.exists():
+        raise HTTPException(404, "not made yet")
+    return FileResponse(p, filename=name)
 
 
 @app.get("/api/models")

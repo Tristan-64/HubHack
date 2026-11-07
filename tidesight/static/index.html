@@ -30,6 +30,8 @@
     <div class="stat"><b id="sLen">–</b><span>Video length</span></div>
     <div class="stat"><b id="sSkip">–</b><span>With no fish (can be skipped)</span></div>
     <div class="stat"><b id="sMom">–</b><span>Fish moments</span></div>
+    <div class="stat"><b id="sEdited">0</b><span>AI boxes edited</span></div>
+    <div class="stat"><b id="sOwn">0</b><span>Boxes I drew</span></div>
     <div class="stat"><b id="sName" style="font-size:15px;font-weight:600;word-break:break-all">–</b><span>File</span></div>
   </div><div class="cmpline" id="cmp"></div></section>
 
@@ -46,8 +48,17 @@
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
     <div class="startrow only-filters"><button class="primary" id="startBtn">▶ Start detection</button><span class="note">Happy with how the video looks? Start detection to find the fish.</span></div>
+    <div class="selbox needs" id="selbox">
+      <div class="selrow"><label for="nameIn"><b>Name</b></label>
+        <input type="text" id="nameIn" list="labelList" placeholder="fish" autocomplete="off" disabled><datalist id="labelList"></datalist>
+        <button id="delBtn" class="hidden">Delete box</button><button id="restoreBtn" class="hidden primary">Restore AI box</button>
+        <button id="resetBtn" class="hidden">Reset to the AI’s box</button><button id="undoBtn" disabled>↩ Undo</button>
+        <span class="note" id="saveNote"></span></div>
+      <div class="note" id="selInfo"></div>
+    </div>
     <input type="range" id="scrub" min="0" max="1000" value="0">
     <div class="tl needs" id="tl"><div class="head" id="head"></div></div>
+    <div class="ticks needs" id="ticks"></div>
     <div class="tl-l needs"><span>0 s</span><span id="endlab"></span></div>
     <div class="note needs">Shaded = frames with fish. Everything else is skipped.</div>
     <div class="key needs"><span><i style="background:var(--teal)"></i>Confident fish</span><span><i style="background:var(--amber)"></i>Worth a second look</span></div>
@@ -69,6 +80,14 @@
   <section class="panel hidden needs" id="spSum"><h2>Species suggestions <small>AI guesses, please check by eye</small></h2><div id="spChips"></div>
     <div class="note">Counts are fish <i>sightings</i> in the checked pictures, so one fish seen in several pictures is counted more than once.</div></section>
 
+  <section class="panel needs" id="boxesPanel"><h2>Boxes <small>every box you can check or fix</small></h2>
+    <div class="filters"><label><input type="checkbox" id="fEdited"> Boxes I edited</label><label><input type="checkbox" id="fRejected"> Show rejected AI boxes</label></div>
+    <div id="boxList"></div>
+    <div class="exprow"><button id="expBtn">Save report (CSV)</button><button id="olBtn">Update the outlined video</button></div>
+    <div class="note" id="expMsg"></div><div class="note" id="olMsg"></div>
+    <div class="note">The report and the outlined video use your changes. Boxes you rejected are left out. The AI only ever calls things “fish”; any other name is typed by a person.</div>
+  </section>
+
   <section class="panel moments needs"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>
 </div>
@@ -85,4 +104,4 @@
   <label class="runsl">Saved results for this video <select id="runs"></select></label>
   <div class="note">The quick preview can’t show <b>Local contrast</b> or <b>Denoise</b>; they appear in the filtered video. Denoise makes preparing the video much slower.</div>
 </aside></div>
-</div><script src="/static/app.js"></script></body></html>
+</div><script src="/static/boxes.js"></script><script src="/static/editor.js"></script><script src="/static/app.js"></script></body></html>

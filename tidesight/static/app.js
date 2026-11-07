@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 const MINC = 0.2;
 let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '', ORIG = null, RUNS = [], loadedCfg = null, META = null;
+let DOC = Boxes.emptyDoc(), HIST = Boxes.createHistory(), SEL = null, saveTimer = null, liveActive = false, ED = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const curModel = () => $('model').value, curRate = () => parseFloat($('sfps').value) || 2;
 const M = () => R || META || { duration: 1, fps: 30, width: 16, height: 9 };
@@ -44,7 +45,7 @@ async function enterFilters() {
     await sleep(700);
   }
   $('prog').classList.add('hidden');
-  META = p; R = null; loadedCfg = null;
+  META = p; R = null; loadedCfg = null; cv.style.pointerEvents = '';
   $('review').classList.remove('hidden'); $('review').classList.add('stage-filters');
   $('usedNote').textContent = ''; $('dirtyNote').classList.add('hidden');
   $('mdl').textContent = p.name || '';
@@ -61,6 +62,7 @@ function load() {
   $('review').classList.remove('hidden'); $('review').classList.remove('stage-filters');
   $('rerun').textContent = 'Re-run detection with these settings';
   applyPlayer();
+  cv.style.pointerEvents = 'auto';
   $('mdl').textContent = `${R.model} · ${R.sample_fps} pictures/sec`;
   $('sLen').textContent = fmt(R.duration, 0);
   $('sName').textContent = R.name || '–';
@@ -78,14 +80,18 @@ function speciesFor(s, j) {
   if (sc < cutoff) return { name: 'Unknown', score: sc, why: 'not sure' };
   return { name: SP.byLatin[lab] || lab, score: sc };
 }
-const maxConf = s => s.boxes.reduce((m, b) => Math.max(m, b[4]), 0);
+// Boxes that count for the timeline/moments: AI boxes the reviewer has not rejected + the reviewer's own boxes.
+function eff(i) {
+  return Boxes.boxesAt(R, DOC, i).filter(b => !b.rejected).map(b => ({ conf: b.kind === 'own' ? 1 : b.conf, j: b.j }));
+}
+const maxOf = arr => arr.reduce((m, b) => Math.max(m, b.conf), 0);
 function recompute() {
   // timeline
   const tl = $('tl'); tl.querySelectorAll('.seg').forEach(e => e.remove());
   const g = gap(); let skipped = 0;
-  R.samples.forEach(s => {
-    const mc = maxConf(s);
-    if (!s.boxes.length) { skipped += g; return; }
+  R.samples.forEach((s, i) => {
+    const E = eff(i), mc = maxOf(E);
+    if (!E.length) { skipped += g; return; }
     const d = document.createElement('div'); d.className = 'seg ' + (mc >= thr ? 't' : 'a');
     d.style.left = (Math.max(0, s.t - g / 2) / R.duration * 100) + '%';
     d.style.width = Math.max(0.15, g / R.duration * 100) + '%';
@@ -95,16 +101,17 @@ function recompute() {
   // moments
   momentsList = []; let cur = null; const tally = {}; let newish = 0;
   R.samples.forEach((s, i) => {
-    const n = s.boxes.filter(b => b[4] >= thr).length;
+    const E = eff(i), n = E.filter(b => b.conf >= thr).length;
     if (n) {
-      if (cur && cur.end === i - 1) { cur.end = i; cur.max = Math.max(cur.max, n); cur.top = Math.max(cur.top, maxConf(s)); }
-      else { cur = { start: i, end: i, max: n, top: maxConf(s), sp: {} }; momentsList.push(cur); }
-      s.boxes.forEach((b, j) => { if (b[4] < thr) return; const sp = speciesFor(s, j); if (sp) { cur.sp[sp.name] = (cur.sp[sp.name] || 0) + 1; tally[sp.name] = (tally[sp.name] || 0) + 1; if (sp.maybeNew) newish++; } });
+      if (cur && cur.end === i - 1) { cur.end = i; cur.max = Math.max(cur.max, n); cur.top = Math.max(cur.top, maxOf(E)); }
+      else { cur = { start: i, end: i, max: n, top: maxOf(E), sp: {} }; momentsList.push(cur); }
+      E.forEach(b => { if (b.conf < thr || b.j === null) return; const j = b.j, sp = speciesFor(s, j); if (sp) { cur.sp[sp.name] = (cur.sp[sp.name] || 0) + 1; tally[sp.name] = (tally[sp.name] || 0) + 1; if (sp.maybeNew) newish++; } });
     }
   });
   $('sMom').textContent = momentsList.length;
   renderCompare();
   renderSummary(tally, newish);
+  renderReview();
   const el = $('moments');
   el.innerHTML = momentsList.length ? '' : '<p class="note">No fish at this confidence. Try moving the slider to the left.</p>';
   momentsList.forEach((m, k) => {
@@ -116,6 +123,9 @@ function recompute() {
   });
   draw();
 }
+
+function shownIndex() { const t = vid.currentTime || 0, i = nearest(t); return Math.abs(R.samples[i].t - t) <= gap() * 1.01 ? i : -1; }
+function shownBoxes(i) { return i < 0 ? [] : Boxes.boxesAt(R, DOC, i); }
 
 function nearest(t) {
   const S = R.samples; let lo = 0, hi = S.length - 1;
@@ -137,15 +147,26 @@ function draw() {
   const t = vid.currentTime || 0, i = R ? nearest(t) : 0, s = R ? R.samples[i] : null;
   if (R && Math.abs(s.t - t) <= gap() * 1.01) {
     const vr = videoRect(); ctx.font = '600 13px -apple-system,Segoe UI,sans-serif'; ctx.textBaseline = 'top';
-    s.boxes.forEach((b, idx) => {
-      const ok = b[4] >= thr, col = ok ? '#14c4af' : '#f0b429';
-      const x = vr.x + b[0] * vr.w, y = vr.y + b[1] * vr.h, w = (b[2] - b[0]) * vr.w, h = (b[3] - b[1]) * vr.h;
-      ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.strokeRect(x, y, w, h);
-      const sp = speciesFor(s, idx), spt = sp ? (sp.name === 'Unknown' ? ' · Unknown' : ` · ${sp.name} ${sp.score.toFixed(2)}`) : '';
-      const label = (ok ? `Fish ${b[4].toFixed(2)}` : `Fish ${b[4].toFixed(2)} · check`) + spt, tw = ctx.measureText(label).width + 10;
-      const ly = y >= 20 ? y - 20 : y + 2;
-      ctx.fillStyle = col; ctx.fillRect(x - 1, ly, tw, 18); ctx.fillStyle = '#06161a'; ctx.fillText(label, x + 4, ly + 3);
+    shownBoxes(i).forEach(b => {
+      const own = b.kind === 'own', ok = own || b.conf >= thr;
+      const col = b.rejected ? '#9aa7ab' : own ? '#3b82f6' : ok ? '#14c4af' : '#f0b429';
+      const x = vr.x + b.x1 * vr.w, y = vr.y + b.y1 * vr.h, w = (b.x2 - b.x1) * vr.w, h = (b.y2 - b.y1) * vr.h;
+      ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.setLineDash(b.rejected ? [6, 4] : []); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+      const sp = !own && !b.rejected ? speciesFor(s, b.j) : null, spt = sp ? (sp.name === 'Unknown' ? ' · Unknown' : ` · ${sp.name} ${sp.score.toFixed(2)}`) : '';
+      const label = own ? b.label : b.rejected ? `${b.label} · rejected` : `${b.label} ${b.conf.toFixed(2)}${ok ? '' : ' · check'}${b.edited ? ' ✎' : ''}${spt}`;
+      const tw = ctx.measureText(label).width + 10, ly = y >= 20 ? y - 20 : y + 2;
+      ctx.fillStyle = col; ctx.fillRect(x - 1, ly, tw, 18); ctx.fillStyle = b.rejected ? '#fff' : own ? '#fff' : '#06161a'; ctx.fillText(label, x + 4, ly + 3);
+      if (b.id === SEL) {   // selected: white outline and drag handles
+        ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+        [[x, y], [x + w / 2, y], [x + w, y], [x, y + h / 2], [x + w, y + h / 2], [x, y + h], [x + w / 2, y + h], [x + w, y + h]].forEach(([hx, hy]) => {
+          ctx.fillStyle = '#fff'; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.fillRect(hx - 4, hy - 4, 8, 8); ctx.strokeRect(hx - 4, hy - 4, 8, 8);
+        });
+      }
     });
+    if (ED && ED.draft) {   // the new box being drawn
+      const d = ED.draft, x = vr.x + d.x1 * vr.w, y = vr.y + d.y1 * vr.h;
+      ctx.lineWidth = 2; ctx.strokeStyle = '#3b82f6'; ctx.setLineDash([5, 4]); ctx.strokeRect(x, y, (d.x2 - d.x1) * vr.w, (d.y2 - d.y1) * vr.h); ctx.setLineDash([]);
+    }
   }
   // readouts
   $('time').textContent = `${fmt(t, 2)} · frame ${Math.round(t * M().fps)}`;
@@ -312,7 +333,12 @@ async function adopt(res, first) {
   else if (!ORIG || ORIG.model !== res.model || ORIG.sample_fps !== res.sample_fps) {
     try { const r = await fetch(`/api/results/${VID}?model=${res.model}&sample_fps=${res.sample_fps}`); ORIG = r.ok ? await r.json() : null; } catch { ORIG = null; }
   }
+  await loadDoc();
   await loadRuns();
+}
+async function loadDoc() {
+  try { DOC = Boxes.normalizeDoc(await (await fetch(`/api/review/${VID}${QS}`)).json()); } catch { DOC = Boxes.emptyDoc(); }
+  HIST = Boxes.createHistory(); SEL = null; liveActive = false;
 }
 async function loadRuns() {
   RUNS = (await (await fetch(`/api/runs/${VID}`)).json()).filter(r => r.model === curModel() && r.sample_fps === curRate());
@@ -347,10 +373,10 @@ async function rerun() {
 $('rerun').onclick = rerun;
 
 // ---------- comparison line ----------
-function momentsFor(res, t) {
+function momentsFor(res, t, withEdits) {
   let moments = 0, boxes = 0, prev = false;
-  res.samples.forEach(s => {
-    const n = s.boxes.filter(b => b[4] >= t).length; boxes += n;
+  res.samples.forEach((s, i) => {
+    const n = withEdits ? eff(i).filter(b => b.conf >= t).length : s.boxes.filter(b => b[4] >= t).length; boxes += n;
     if (n && !prev) moments++; prev = n > 0;
   });
   return { moments, boxes };
@@ -358,7 +384,7 @@ function momentsFor(res, t) {
 function renderCompare() {
   if (!R) return;
   const f = x => `${x.moments} fish moment${x.moments === 1 ? '' : 's'}, ${x.boxes} boxes above ${thr.toFixed(2)}`;
-  const cur = momentsFor(R, thr);
+  const cur = momentsFor(R, thr, true);
   if (!ORIG || ORIG === R) { $('cmp').innerHTML = `<b>Original (no filters):</b> ${f(cur)}`; return; }
   $('cmp').innerHTML = `<b>Original:</b> ${f(momentsFor(ORIG, thr))} &nbsp;·&nbsp; <b>Current settings:</b> ${f(cur)}`;
 }
@@ -393,3 +419,126 @@ function drawBA(cid, im, boxes) {
     x.fillStyle = col; x.fillRect(bx - 1, ly, tw, 16); x.fillStyle = '#06161a'; x.fillText(l, bx + 3, ly + 2);
   });
 }
+
+
+// ======================= reviewer edits: rename / move / resize / delete =======================
+function afterEdit(save = true) {
+  if (save) scheduleSave();
+  recompute();
+}
+function scheduleSave() { clearTimeout(saveTimer); $('saveNote').textContent = 'Saving…'; saveTimer = setTimeout(saveNow, 400); }
+async function saveNow() {
+  clearTimeout(saveTimer); saveTimer = null;
+  try {
+    await fetch(`/api/review/${VID}${QS}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DOC), keepalive: true });
+    $('saveNote').textContent = 'All changes saved ✓';
+  } catch { $('saveNote').textContent = 'Could not save. Is the app still running?'; }
+}
+window.addEventListener('pagehide', () => { if (saveTimer) saveNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && saveTimer) saveNow(); });
+
+function edit(fn) { HIST.push(DOC); fn(); afterEdit(); }
+function selBox() { return SEL ? Boxes.findBox(R, DOC, SEL) : null; }
+function select(id, jump) {
+  SEL = id; const b = selBox();
+  if (jump && b) { vid.pause(); seek(R.samples[b.i].t); }
+  renderSel(); draw();
+}
+function deleteSelected() {
+  const b = selBox(); if (!b) return;
+  if (b.kind === 'own') edit(() => { Boxes.deleteOwn(DOC, b.id); SEL = null; });
+  else if (!b.rejected) edit(() => Boxes.rejectAI(R, DOC, b.id));
+}
+function doUndo() { const d = HIST.undo(); if (!d) return; DOC = d; if (SEL && !selBox()) SEL = null; afterEdit(); }
+
+ED = BoxEditor.createEditor({
+  canvas: cv,
+  getRect: videoRect,
+  getBoxes: () => (R ? shownBoxes(shownIndex()) : []),
+  getSelected: () => SEL,
+  setSelected: id => select(id, false),
+  enabled: () => !!R && !baOn,
+  onDrawStart: () => vid.pause(),
+  onAdd: r => { const i = shownIndex(); if (i < 0) return; let id; edit(() => { id = Boxes.addOwn(DOC, i, r, 'fish'); }); select(id, false); },
+  onChange: (id, r, final) => {
+    if (!liveActive) { HIST.push(DOC); liveActive = true; }
+    Boxes.patchBox(R, DOC, id, r);
+    if (final) { liveActive = false; afterEdit(); renderSel(); }
+  },
+  onDelete: deleteSelected,
+  onNudge: (id, dx, dy) => { const b = selBox(); if (!b) return; edit(() => Boxes.patchBox(R, DOC, id, Boxes.moveRect(b, dx, dy))); },
+  onUndo: doUndo,
+});
+
+$('undoBtn').onclick = doUndo;
+$('delBtn').onclick = deleteSelected;
+$('restoreBtn').onclick = () => { const b = selBox(); if (b) edit(() => Boxes.restoreAI(R, DOC, b.id)); };
+$('resetBtn').onclick = () => { const b = selBox(); if (b) edit(() => Boxes.resetAI(R, DOC, b.id)); };
+function commitName() {
+  const b = selBox(); if (!b) return; const v = $('nameIn').value.trim() || Boxes.DEFAULT;
+  if (v !== b.label) edit(() => Boxes.patchBox(R, DOC, b.id, { label: v }));
+  $('nameIn').value = v;
+}
+$('nameIn').addEventListener('change', commitName);
+$('nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') { commitName(); $('nameIn').blur(); } if (e.key === 'Escape') { $('nameIn').value = (selBox() || {}).label || ''; $('nameIn').blur(); } });
+
+function renderSel() {
+  const b = selBox(), inp = $('nameIn');
+  $('selbox').classList.toggle('on', !!b);
+  inp.disabled = !b;
+  if (!b) { inp.value = ''; $('selInfo').textContent = 'Click a box to select it, then drag to move it or drag its handles to resize. Drag on an empty part of the picture to draw a new box.'; }
+  else {
+    if (document.activeElement !== inp) inp.value = b.label;
+    $('selInfo').textContent = b.kind === 'own' ? 'Your box' : `AI box · confidence ${b.conf.toFixed(2)}${b.edited ? ' · edited' : ''}${b.rejected ? ' · rejected' : ''}`;
+  }
+  $('labelList').innerHTML = Boxes.labelSuggestions(R, DOC).map(l => `<option value="${l.replace(/"/g, '&quot;')}">`).join('');
+  $('delBtn').classList.toggle('hidden', !b || b.rejected); $('delBtn').textContent = b && b.kind === 'ai' ? 'Delete AI box' : 'Delete box';
+  $('restoreBtn').classList.toggle('hidden', !(b && b.rejected));
+  $('resetBtn').classList.toggle('hidden', !(b && b.kind === 'ai' && b.edited));
+  $('undoBtn').disabled = HIST.size === 0;
+}
+
+function renderReview() {
+  if (!R) return;
+  renderSel();
+  const all = Boxes.allBoxes(R, DOC);
+  $('sEdited').textContent = all.filter(b => b.kind === 'ai' && b.edited).length;
+  $('sOwn').textContent = all.filter(b => b.kind === 'own').length;
+  // one tick per box; click = jump to it and select it
+  $('ticks').innerHTML = all.map(b => {
+    const cls = b.rejected ? 'rej' : b.kind === 'own' ? 'own' : (b.conf >= thr ? 'ai' : 'low') + (b.edited ? ' ed' : '');
+    return `<i class="tick ${cls}${b.id === SEL ? ' sel' : ''}" data-id="${b.id}" style="left:${R.samples[b.i].t / R.duration * 100}%" title="${b.label}"></i>`;
+  }).join('');
+  // list
+  const onlyEdited = $('fEdited').checked, showRej = $('fRejected').checked;
+  let rows = all.filter(b => b.kind === 'own' || b.edited || (b.rejected ? showRej : b.conf >= thr));
+  if (!showRej) rows = rows.filter(b => !b.rejected);
+  if (onlyEdited) rows = rows.filter(b => b.edited);
+  rows.sort((a, b) => R.samples[a.i].t - R.samples[b.i].t);
+  const cap = rows.length > 300; if (cap) rows = rows.slice(0, 300);
+  $('boxList').innerHTML = rows.length ? `<table class="bt"><tr><th>Time</th><th>Name</th><th>Who</th><th>Confidence</th><th></th></tr>` + rows.map(b =>
+    `<tr data-id="${b.id}" class="${b.id === SEL ? 'sel' : ''}"><td>${fmt(R.samples[b.i].t, 1)}</td><td>${b.label.replace(/</g, '&lt;')}</td><td>${b.kind === 'own' ? 'Me' : 'AI'}</td><td>${b.conf === null ? '–' : b.conf.toFixed(2)}</td><td>${b.edited ? '✎ edited ' : ''}${b.rejected ? 'rejected' : ''}</td></tr>`).join('') + '</table>' + (cap ? '<p class="note">Showing the first 300 boxes.</p>' : '')
+    : '<p class="note">No boxes to show here.</p>';
+}
+$('ticks').addEventListener('click', e => { const t = e.target.closest('.tick'); if (t) select(t.dataset.id, true); });
+$('boxList').addEventListener('click', e => { const r = e.target.closest('tr[data-id]'); if (r) select(r.dataset.id, true); });
+$('fEdited').onchange = $('fRejected').onchange = renderReview;
+
+// ---------- reports and the outlined video ----------
+$('expBtn').onclick = async () => {
+  await saveNow(); $('expMsg').textContent = 'Saving the report…';
+  const r = await (await fetch(`/api/export/${VID}${QS}&thr=${thr}`, { method: 'POST' })).json();
+  $('expMsg').innerHTML = `Saved in <code>${r.folder}</code><br>` + r.files.map(f => `<a href="/download/${VID}/${f}">${f}</a>`).join(' · ');
+};
+$('olBtn').onclick = async () => {
+  await saveNow(); const b = $('olBtn'); b.disabled = true;
+  try {
+    await fetch(`/api/outline/${VID}${QS}&thr=${thr}`, { method: 'POST' });
+    while (true) {
+      const s = await (await fetch(`/api/outline_status/${VID}${QS}`)).json();
+      if (s.stage === 'error') { $('olMsg').textContent = s.error; return; }
+      if (s.stage === 'done') { $('olMsg').innerHTML = `Done. <a href="/download/${VID}/outlined.mp4">Download the outlined video</a>`; return; }
+      $('olMsg').textContent = `Drawing the boxes on the video: ${s.done} of ${s.total} frames`; await sleep(800);
+    }
+  } finally { b.disabled = false; }
+};

@@ -1,0 +1,78 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Editor component test</title>
+<style>body{margin:0}#cv{position:absolute;left:0;top:0;width:800px;height:450px;display:block}#name{position:absolute;left:0;top:470px}</style></head>
+<body>
+<canvas id="cv" width="800" height="450"></canvas>
+<input id="name" type="text" value="fish">
+<pre id="result" style="position:absolute;top:520px">RUNNING</pre>
+<script src="/static/boxes.js"></script><script src="/static/editor.js"></script>
+<script>
+// Runs the REAL boxes.js + editor.js against a fake canvas. A small harness wires them the way app.js does.
+const B = Boxes, log = [];
+const res = { samples: [{ t: 0, frame: 0, boxes: [[.5, .5, .7, .7, .9]] }] };   // AI box: px (400,225)-(560,315)
+let doc = B.emptyDoc(), SEL = null, paused = 0, hist = B.createHistory(), live = false;
+const cv = document.getElementById('cv'), nameIn = document.getElementById('name');
+const ed = BoxEditor.createEditor({
+  canvas: cv, getRect: () => ({ x: 0, y: 0, w: 800, h: 450 }), getBoxes: () => B.boxesAt(res, doc, 0),
+  getSelected: () => SEL, setSelected: id => { SEL = id; }, enabled: () => true, onDrawStart: () => { paused++; },
+  onAdd: r => { hist.push(doc); SEL = B.addOwn(doc, 0, r, 'fish'); },
+  onChange: (id, r, fin) => { if (!live) { hist.push(doc); live = true; } B.patchBox(res, doc, id, r); if (fin) live = false; },
+  onDelete: id => { hist.push(doc); if (id[0] === 'm') B.rejectAI(res, doc, id); else { B.deleteOwn(doc, id); SEL = null; } },
+  onNudge: (id, dx, dy) => { const b = B.findBox(res, doc, id); hist.push(doc); B.patchBox(res, doc, id, B.moveRect(b, dx, dy)); },
+  onUndo: () => { const d = hist.undo(); if (d) doc = d; },
+});
+const ptr = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, button: 0, bubbles: true }));
+const drag = (x0, y0, x1, y1) => { ptr('pointerdown', x0, y0); ptr('pointermove', (x0 + x1) / 2, (y0 + y1) / 2); ptr('pointermove', x1, y1); ptr('pointerup', x1, y1); };
+const key = (k, target, extra) => (target || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...extra }));
+const ai = () => B.findBox(res, doc, 'm0-0');
+function t(name, fn) { try { fn(); log.push('PASS ' + name); } catch (e) { log.push('FAIL ' + name + ' :: ' + e.message); } }
+const eq = (c, m) => { if (!c) throw new Error(m); };
+
+t('dragging on empty space draws a new box and pauses the video', () => {
+  drag(100, 100, 220, 180);
+  eq(paused === 1, 'video was not paused once (paused=' + paused + ')');
+  eq(doc.own.length === 1 && doc.own[0].label === 'fish', 'no new fish box');
+  eq(SEL === doc.own[0].id, 'new box not selected');
+});
+t('a plain click on an unselected AI box selects it (no new box)', () => {
+  SEL = null; drag(480, 270, 480, 270);
+  eq(SEL === 'm0-0', 'AI box not selected, SEL=' + SEL); eq(doc.own.length === 1, 'a box was drawn by a click');
+});
+t('dragging from an unselected box draws a new box, the AI box stays put', () => {
+  SEL = null; const before = JSON.stringify(ai()); drag(450, 250, 520, 300);
+  eq(doc.own.length === 2, 'no new box drawn'); eq(JSON.stringify(ai()) === before, 'the AI box moved');
+});
+t('a selected box moves when dragged and becomes edited (source stays model)', () => {
+  SEL = 'm0-0'; drag(480, 270, 520, 300);
+  const b = ai(); eq(b.edited && b.kind === 'ai', 'not edited'); eq(Math.abs(b.x1 - (.5 + 40 / 800)) < 1e-6, 'x did not move by 40px, x1=' + b.x1);
+  eq(Math.abs(b.orig.x1 - .5) < 1e-9, 'original lost');
+});
+t('dragging a handle resizes the selected box', () => {
+  SEL = 'm0-0'; const b = ai(), x = b.x2 * 800, y = b.y2 * 450, w0 = b.x2 - b.x1; drag(x, y, x + 24, y + 18);
+  const n = ai(); eq(Math.abs((n.x2 - n.x1) - (w0 + 24 / 800)) < 1e-6, 'width did not grow'); eq(Math.abs(n.x1 - b.x1) < 1e-9, 'moved instead of resized');
+});
+t('moving back to the original place makes it unedited again', () => {
+  doc.ai = {}; SEL = 'm0-0'; drag(480, 270, 520, 300); eq(ai().edited, 'should be edited'); drag(520, 300, 480, 270);
+  eq(!ai().edited, 'still edited after moving back');
+});
+t('Delete removes the selected AI box as rejected; Ctrl/Cmd+Z brings it back', () => {
+  SEL = 'm0-0'; key('Delete'); eq(ai().rejected, 'not rejected'); key('z', document.body, { ctrlKey: true }); eq(!ai().rejected, 'undo did not restore');
+});
+t('arrow keys nudge the selected box', () => {
+  doc.ai = {}; SEL = 'm0-0'; const x = ai().x1; key('ArrowRight'); eq(ai().x1 > x, 'did not move');
+});
+t('typing in the name box never triggers Delete / Backspace / arrow shortcuts', () => {
+  doc.ai = {}; SEL = 'm0-0'; nameIn.focus(); const before = JSON.stringify(ai());
+  ['Delete', 'Backspace', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape'].forEach(k => key(k, nameIn));
+  key('z', nameIn, { ctrlKey: true });
+  eq(JSON.stringify(ai()) === before, 'a shortcut changed the box while typing'); eq(SEL === 'm0-0', 'selection was dropped while typing');
+  nameIn.blur();
+});
+t('shortcuts work again once focus leaves the name box', () => {
+  SEL = 'm0-0'; key('Delete'); eq(ai().rejected, 'Delete ignored after blur');
+});
+t('Escape deselects', () => { SEL = 'm0-0'; key('Escape'); eq(SEL === null, 'still selected'); });
+
+const failed = log.filter(l => l.startsWith('FAIL'));
+document.getElementById('result').textContent = log.join('\n') + '\n' + (failed.length ? 'FAILED ' + failed.length : 'ALL PASS ' + log.length);
+</script></body></html>
