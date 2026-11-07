@@ -96,22 +96,32 @@ rows = s2.number_input("Grid rows", 1, 10, 3)
 cols = s3.number_input("Grid columns", 1, 10, 3)
 yolo_ok = detect.yolo_available()
 method_label = st.radio("How should fish be found?",
-                        ["Motion detection (default)", "YOLO-Fish (AI)"], index=0,
-                        captions=["Looks for things that moved. No AI needed.", "AI trained on fish. Needs extra files."])
+                        ["Motion detection (default)", "YOLO-Fish (AI)", "Community Fish Detector (AI)"], index=0,
+                        captions=["Looks for things that moved. No AI needed.", "AI trained on fish. Needs extra files.",
+                                  "AI trained on 1.9 million fish pictures. Needs an extra install and a model file."])
+want_cfd = method_label.startswith("Community")
+cfd_ok, cfd_problem = detect.cfd_status()
+if want_cfd and not cfd_ok:
+    st.error(f"The Community Fish Detector can't be used yet: {cfd_problem}. "
+             "Install: run `pip install -r requirements-ai.txt` once. Model file: download "
+             "cfd-rf-detr-small-1024-2026.06.06.cp-016.20260706-release.pth from "
+             "https://github.com/filippovarini/community-fish-detector/releases (release 2026.07.06) and put it in the 'models' folder. "
+             "Until then, please use Motion detection.")
 if method_label.startswith("YOLO") and not yolo_ok:
     st.error("YOLO-Fish needs two files in the 'models' folder, and they are missing. "
              "Get the config file (yolo-fish-2.cfg) from https://github.com/tamim662/YOLO-Fish/tree/main/models and the "
              "weights file (merge_yolo-fish-2.weights) from the 'merged dataset' Google Drive link in that page's README. "
              "Until then, please use Motion detection.")
 use_yolo = method_label.startswith("YOLO") and yolo_ok
-if use_yolo:
+use_cfd = want_cfd and cfd_ok
+if use_yolo or use_cfd:
     conf = st.slider("Confidence (higher = fewer, surer detections)", 0.05, 0.95, 0.4, 0.05)
 else:
     m1, m2 = st.columns(2)
     sens = m1.slider("Sensitivity (higher = notices fainter movement)", 1, 100, 50)
     minsize = m2.slider("Smallest fish size (pixels of area)", 20, 5000, 300, 10)
-method = "YOLO-Fish" if use_yolo else "Motion"
-can_run = not (method_label.startswith("YOLO") and not yolo_ok)
+method = "YOLO-Fish" if use_yolo else "CommunityFishDetector" if use_cfd else "Motion"
+can_run = not (method_label.startswith("YOLO") and not yolo_ok) and not (want_cfd and not cfd_ok)
 
 if st.button("Run detection", type="primary", disabled=not can_run):
     times = sample_times(start, end, interval)
@@ -119,12 +129,12 @@ if st.button("Run detection", type="primary", disabled=not can_run):
     frames, bar = [], st.progress(0.0, text="Looking for fish...")
     enh = lambda f: enhance(f, bri, con, gam)
     for i, t in enumerate(times):
-        if use_yolo:
+        if use_yolo or use_cfd:
             raw = read_frame_at(path, t)
             if raw is None:
                 continue
             img = enh(raw)
-            dets = detect.detect_yolo(img, conf, rows, cols)
+            dets = (detect.detect_yolo if use_yolo else detect.detect_cfd)(img, conf, rows, cols)
         else:
             dets, raw = detect.detect_motion(path, t, enh, sens, minsize, rows, cols)
             if raw is None:

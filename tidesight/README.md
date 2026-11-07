@@ -18,6 +18,11 @@ Optional YOLO-Fish (AI): put these in `models/`:
 - `yolo-fish-2.cfg` from https://github.com/tamim662/YOLO-Fish/tree/main/models
 - `merge_yolo-fish-2.weights` from the "merged dataset" Google Drive link in that repo's README
 
+Optional Community Fish Detector (AI, trained on 1.9 million fish images):
+1. `pip install -r requirements-ai.txt` (installs `rfdetr` and PyTorch, a large download)
+2. Download `cfd-rf-detr-small-1024-2026.06.06.cp-016.20260706-release.pth` from https://github.com/filippovarini/community-fish-detector/releases (release 2026.07.06) into `models/`.
+Licence: the RF-DETR code and these weights are Apache-licensed per the CFD repo, and nothing is bundled here. The older YOLOv12x version of CFD is AGPL and is not used.
+
 Licence note: YOLO-Fish is GPL-3.0. This repo is MIT and does not include YOLO-Fish code, config or weights (weights are git-ignored), so MIT is fine. If you ever commit those files or copy its code, the combined project must be released under GPL-3.0.
 
 The older Grounding-DINO scripts (`run_tidesight.py`, `test_detector.py`, `validate.py`, `config.yaml`) are not used by the app; they need `pip install -r requirements-legacy.txt`.

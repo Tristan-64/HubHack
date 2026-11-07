@@ -16,3 +16,5 @@ __pycache__/
 videos/*
 !videos/.gitkeep
 models/*.weights
+models/*.pth
+models/*.pt

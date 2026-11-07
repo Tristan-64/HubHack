@@ -9,6 +9,8 @@ MODEL_DIR = Path(__file__).parent / "models"
 CFG = MODEL_DIR / "yolo-fish-2.cfg"
 WEIGHTS = MODEL_DIR / "merge_yolo-fish-2.weights"
 _net = None
+_cfd = None
+CFD_WEIGHTS_GLOB = "cfd-rf-detr-*.pth"  # Community Fish Detector (RF-DETR) checkpoint
 
 
 def _finish(boxes, shape, rows, cols, scores=None):
@@ -80,3 +82,35 @@ def draw_detections(frame, dets, is_fish=None):
         cv2.rectangle(out, (d["x"], d["y"]), (d["x"] + d["w"], d["y"] + d["h"]), col, 2)
         cv2.putText(out, str(i + 1), (d["x"], max(d["y"] - 5, 15)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, col, 2, cv2.LINE_AA)
     return out
+
+
+def cfd_weights():
+    found = sorted(MODEL_DIR.glob(CFD_WEIGHTS_GLOB))
+    return found[0] if found else None
+
+
+def cfd_status():
+    """Returns (ok, plain-language problem or '')."""
+    try:
+        import rfdetr  # noqa: F401
+    except Exception:
+        return False, "the 'rfdetr' add-on is not installed (run: pip install -r requirements-ai.txt)"
+    if cfd_weights() is None:
+        return False, "the model file is missing from the 'models' folder"
+    return True, ""
+
+
+def detect_cfd(frame, conf, rows, cols):
+    """Community Fish Detector (RF-DETR, Apache-2.0 code). Optional: needs rfdetr (pulls in PyTorch)."""
+    global _cfd
+    import cv2 as _cv
+    from PIL import Image
+    if _cfd is None:
+        from rfdetr import from_checkpoint
+        _cfd = from_checkpoint(str(cfd_weights()))
+    img = Image.fromarray(_cv.cvtColor(frame, _cv.COLOR_BGR2RGB))
+    det = _cfd.predict(img, threshold=float(conf))
+    boxes = []
+    for x1, y1, x2, y2 in det.xyxy:
+        boxes.append((int(x1), int(y1), int(x2 - x1), int(y2 - y1)))
+    return _finish(boxes, frame.shape, rows, cols, list(det.confidence))
