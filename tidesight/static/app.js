@@ -152,8 +152,10 @@ function updateCount() {
   if (!R) return;
   const c = countNow(), key = JSON.stringify(c) + thr + DOC.own.length;
   const big = c.none ? '–' : String(c.n); if ($('cntBig').textContent !== big) $('cntBig').textContent = big;   // badge on the video
+  const split = c.none ? '' : `AI ${c.ai} + you ${c.own}`; if ($('cntSplit').textContent !== split) $('cntSplit').textContent = split;
   if (key === lastCount) return; lastCount = key;
   $('cntNow').textContent = c.n;
+  $('cntWho').textContent = c.none ? '' : `(${c.ai} found by the AI + ${c.own} added by you)`;
   const names = Object.entries(c.by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${v}`).join(' · ');
   $('cntDetail').textContent = (names || (c.none ? 'Move the video to a checked picture to see a count.' : 'No fish counted here.')) + (c.unsure ? ` · ${c.unsure} unsure (amber, below the confidence slider)` : '');
   const p = peakCount(); $('cntPeak').textContent = p.best ? `Most in one picture: ${p.best} (at ${fmt(R.samples[p.at].t, 1)})` : '';

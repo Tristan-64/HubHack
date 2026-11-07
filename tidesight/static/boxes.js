@@ -34,12 +34,12 @@
   }
   // Fish counted in picture i: not removed, and (the reviewer's own box, or confident, or edited). Same rule as the report.
   function countedAt(res, doc, i, thr) {
-    const by = {}; let n = 0, unsure = 0;
+    const by = {}; let n = 0, unsure = 0, ai = 0, own = 0;
     boxesAt(res, doc, i).forEach(b => {
       if (b.rejected) return;
-      if (b.kind === 'own' || b.conf >= thr || b.edited) { n++; by[b.label] = (by[b.label] || 0) + 1; } else unsure++;
+      if (b.kind === 'own' || b.conf >= thr || b.edited) { n++; by[b.label] = (by[b.label] || 0) + 1; if (b.kind === 'own') own++; else ai++; } else unsure++;
     });
-    return { n, unsure, by };
+    return { n, unsure, by, ai, own };
   }
   function pick(e) { const r = {}; C.forEach(c => { if (c in e) r[c] = e[c]; }); if (e.label) r.label = e.label; return r; }
   function allBoxes(res, doc) { const o = []; res.samples.forEach((_, i) => o.push(...boxesAt(res, doc, i))); return o; }

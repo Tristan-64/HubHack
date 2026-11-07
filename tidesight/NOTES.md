@@ -57,3 +57,5 @@
 
 ## Count badge on the video
 - boxes.js: countedAt() (the one counting rule, same as report counted_total); app.js uses it for the badge (#cntBig on the video) and the bar; tests: Node (adds/removes/restore/accept), selftest (page count == frames.csv), Chrome component test (draw/delete/undo). No installs.
+
+- Count badge now shows where the number comes from: "AI x + you y" (countedAt returns ai/own).

@@ -38,7 +38,7 @@
   <section class="panel">
     <h2>Survey footage <small id="mdl"></small></h2>
     <div id="baWrap" class="ba hidden"><figure><div class="bawrap"><img id="baO"><canvas id="baOc"></canvas></div><figcaption>Original</figcaption></figure><figure><div class="bawrap"><img id="baE"><canvas id="baEc"></canvas></div><figcaption>With your filters</figcaption></figure></div>
-    <div class="stage" id="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas><div class="cntbadge needs" id="cntBadge" title="Fish counted in this picture">🐟 <b id="cntBig">0</b></div></div>
+    <div class="stage" id="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas><div class="cntbadge needs" id="cntBadge" title="Fish counted in this picture">🐟 <b id="cntBig">0</b><small id="cntSplit"></small></div></div>
     <div class="ctrls">
       <button class="primary" id="play">▶ Play</button>
       <button id="prevFish" class="needs">⏮ Previous fish</button><button id="nextFish" class="needs">Next fish ⏭</button>
@@ -48,7 +48,7 @@
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
     <div class="startrow only-filters"><button class="primary" id="startBtn">▶ Start detection</button><span class="note">Happy with how the video looks? Start detection to find the fish.</span></div>
-    <div class="countbar needs" id="countbar"><span>Fish in this picture: <b id="cntNow">0</b></span><span class="cntdetail" id="cntDetail"></span><span class="cntpeak" id="cntPeak"></span></div>
+    <div class="countbar needs" id="countbar"><span>Fish in this picture: <b id="cntNow">0</b> <small id="cntWho"></small></span><span class="cntdetail" id="cntDetail"></span><span class="cntpeak" id="cntPeak"></span></div>
     <div class="selbox needs" id="selbox">
       <div class="selrow"><label for="nameIn"><b>Name</b></label>
         <input type="text" id="nameIn" list="labelList" placeholder="fish" autocomplete="off" disabled><datalist id="labelList"></datalist>

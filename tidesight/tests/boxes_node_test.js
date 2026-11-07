@@ -51,8 +51,10 @@ const back = h.undo(); ok(back.own.length === 0 && h.size === 0, 'undo restores 
 const cr = { samples: [{ t: 0, frame: 0, boxes: [[.1, .1, .3, .3, .9], [.5, .5, .7, .7, .8], [.6, .1, .8, .3, .3]] }] };
 let cd = B.emptyDoc(); const N = () => B.countedAt(cr, cd, 0, .6).n;
 ok(N() === 2, 'count starts at the 2 confident AI boxes (the 0.3 one is unsure)');
+const split = () => { const c = B.countedAt(cr, cd, 0, .6); return `${c.ai}+${c.own}=${c.n}`; };
+ok(split() === '2+0=2', 'split: 2 from the AI, 0 from you');
 const own1 = B.addOwn(cd, 0, { x1: .1, y1: .6, x2: .2, y2: .8 }); ok(N() === 3, 'adding a box: count goes up');
-B.addOwn(cd, 0, { x1: .3, y1: .6, x2: .4, y2: .8 }); ok(N() === 4, 'adding another: up again');
+B.addOwn(cd, 0, { x1: .3, y1: .6, x2: .4, y2: .8 }); ok(N() === 4, 'adding another: up again'); ok(split() === '2+2=4', 'split: AI 2 + you 2 = 4');
 B.rejectAI(cr, cd, 'm0-0'); ok(N() === 3, 'removing an AI box: count goes down');
 B.deleteOwn(cd, own1); ok(N() === 2, 'removing your own box: count goes down');
 B.restoreAI(cr, cd, 'm0-0'); ok(N() === 3, 'restoring an AI box: count goes up');
