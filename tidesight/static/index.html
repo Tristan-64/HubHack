@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fish footage reviewer</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><div class="wrap">
+<h1>🐟 Fish footage reviewer</h1>
+<p class="sub">Add an underwater video and the computer will mark where the fish are. Your video stays on this computer.</p>
+
+<section class="panel" id="upload">
+  <div class="drop" id="drop"><b>Drop a video here</b><br>or click to choose a file (mp4, mov, m4v, avi)</div>
+  <input type="file" id="file" accept="video/*,.mp4,.mov,.m4v,.avi,.mkv" hidden>
+  <div class="opts">
+    <label>Pictures checked per second <input type="number" id="sfps" value="2" min="0.1" max="30" step="0.5" style="width:70px"></label>
+    <label>Fish finder <select id="model"></select></label>
+  </div>
+  <div id="prog" class="hidden" style="margin-top:16px"><div id="progtxt" style="margin-bottom:6px"></div><div class="bar"><i id="progbar"></i></div></div>
+  <div id="err" class="err hidden"></div>
+</section>
+
+<div id="review" class="hidden">
+  <section class="panel"><div class="stats">
+    <div class="stat"><b id="sLen">–</b><span>Video length</span></div>
+    <div class="stat"><b id="sSkip">–</b><span>With no fish (can be skipped)</span></div>
+    <div class="stat"><b id="sMom">–</b><span>Fish moments</span></div>
+    <div class="stat"><b id="sName" style="font-size:15px;font-weight:600;word-break:break-all">–</b><span>File</span></div>
+  </div></section>
+
+  <section class="panel">
+    <h2>Survey footage <small id="mdl"></small></h2>
+    <div class="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas></div>
+    <div class="ctrls">
+      <button class="primary" id="play">▶ Play</button>
+      <button id="prevFish">⏮ Previous fish</button><button id="nextFish">Next fish ⏭</button>
+      <button id="stepB" title="Back one checked picture">◀ Step</button><button id="stepF" title="Forward one checked picture">Step ▶</button>
+      <span class="time" id="time">00:00.00 · frame 0</span>
+    </div>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <div class="tl" id="tl"><div class="head" id="head"></div></div>
+    <div class="tl-l"><span>0 s</span><span id="endlab"></span></div>
+    <div class="note">Shaded = frames with fish. Everything else is skipped.</div>
+    <div class="key"><span><i style="background:var(--teal)"></i>Confident fish</span><span><i style="background:var(--amber)"></i>Worth a second look</span></div>
+    <div class="conf"><label for="conf">Count fish at confidence of at least <span id="confv">0.60</span></label>
+      <input type="range" id="conf" min="0.2" max="0.95" step="0.05" value="0.6"></div>
+  </section>
+
+  <section class="panel moments"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
+</div>
+</div><script src="/static/app.js"></script></body></html>

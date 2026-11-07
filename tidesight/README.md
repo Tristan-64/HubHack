@@ -1,31 +1,28 @@
-# TideSight
+# Fish footage reviewer
 
-## Fish counter app (Streamlit, no AI install needed)
+A local web page for reviewing underwater survey video. You add a video, the **Community Fish Detector** marks the fish, and you review the original video with every detection and its confidence drawn on top, a shaded "fish timeline", a confidence slider and a list of fish moments. Nothing leaves your computer (the server only listens on 127.0.0.1).
 
-Local web app for counting fish in dark GoPro footage. Nothing is uploaded.
-
+## Setup (once)
 ```
+cd tidesight
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
 ```
+(PyTorch is included via `rfdetr`, so this is a big download, roughly 2 GB.)
 
-1. Copy videos (mp4, mov, avi, m4v) into the `videos/` folder, then pick one in the app.
-2. Trim, enhance, run detection (Motion by default), review each sampled frame, then build the report.
-3. Results go to `outputs/<video name>/` (frames, screenshots, fish.csv, frames.csv, summary.csv).
+## Run
+```
+source .venv/bin/activate
+python app.py
+```
+Open http://127.0.0.1:8000. The first run downloads the model (about 120 MB) into `models/`.
 
-Optional YOLO-Fish (AI): put these in `models/`:
-- `yolo-fish-2.cfg` from https://github.com/tamim662/YOLO-Fish/tree/main/models
-- `merge_yolo-fish-2.weights` from the "merged dataset" Google Drive link in that repo's README
-
-Optional Community Fish Detector (AI, trained on 1.9 million fish images):
-1. `pip install -r requirements-ai.txt` (installs `rfdetr` and PyTorch, a large download)
-2. Download `cfd-rf-detr-small-1024-2026.06.06.cp-016.20260706-release.pth` from https://github.com/filippovarini/community-fish-detector/releases (release 2026.07.06) into `models/`.
-Licence: the RF-DETR code and these weights are Apache-licensed per the CFD repo, and nothing is bundled here. The older YOLOv12x version of CFD is AGPL and is not used.
-
-Licence note: YOLO-Fish is GPL-3.0. This repo is MIT and does not include YOLO-Fish code, config or weights (weights are git-ignored), so MIT is fine. If you ever commit those files or copy its code, the combined project must be released under GPL-3.0.
-
-The older Grounding-DINO scripts (`run_tidesight.py`, `test_detector.py`, `validate.py`, `config.yaml`) are not used by the app; they need `pip install -r requirements-legacy.txt`.
+## Notes
+- Uploads are saved in `uploads/<id>/`, with results as `results_<model>_<rate>.json` beside the video. Uploading the same video again reuses the saved results.
+- Videos the browser can't play (for example GoPro HEVC/H.265) are converted to an H.264 copy with the ffmpeg bundled in `imageio-ffmpeg`.
+- Uses the Mac GPU (mps) when available, otherwise CPU. The detector runs at confidence 0.2 and the slider filters the saved boxes.
+- Model: Community Fish Detector, https://github.com/WildHackers/community-fish-detector (RF-DETR Nano by default, Small optional; code and weights Apache-licensed per that repo). The deprecated YOLOv12x version is AGPL and only supported as a manual fallback (`pip install ultralytics`, model key "yolo").
+- The earlier Streamlit prototype is kept as `streamlit_app.py` (deps in `requirements-streamlit.txt`); the older Grounding-DINO scripts need `requirements-legacy.txt`.
 
 ---
 

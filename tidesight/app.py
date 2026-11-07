@@ -1,219 +1,209 @@
-"""Coastal Action fish counter. Run with: streamlit run app.py"""
-import cv2
-import pandas as pd
-import streamlit as st
-
-import detect
-import report
-from enhance import enhance
-from grid import draw_grid
-from video import VIDEO_DIR, default_trim, list_videos, mmss, read_frame_at, sample_times, video_info
+"""Fish video reviewer. Run:  python app.py   ->  http://127.0.0.1:8000  (local only)"""
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import threading
+import traceback
 from pathlib import Path
 
-st.set_page_config(page_title="Fish counter", layout="wide")
-S = st.session_state
+import cv2
+import uvicorn
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+import detector
+
+ROOT = Path(__file__).parent
+UPLOADS = ROOT / "uploads"
+UPLOADS.mkdir(exist_ok=True)
+BROWSER_EXTS = {".mp4", ".m4v", ".mov"}
+
+app = FastAPI()
+JOBS = {}  # key -> status dict
 
 
-def species_list():
-    p = Path(__file__).parent / "species.csv"
-    names = pd.read_csv(p)["common_name"].tolist() if p.exists() else []
-    return names + ["Unknown"]
+def vdir(vid):
+    if not re.fullmatch(r"[0-9a-f]{16}", vid):
+        raise HTTPException(400, "bad id")
+    return UPLOADS / vid
 
 
-def reset_all():
-    for k in list(S.keys()):
-        del S[k]
+def original_path(d):
+    for p in d.glob("original.*"):
+        return p
+    raise HTTPException(404, "video not found")
 
 
-def rgb(img):
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+def probe_codec(path):
+    import imageio_ffmpeg
+    r = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-i", str(path)], capture_output=True, text=True)
+    m = re.search(r"Video:\s*(\w+)", r.stderr)
+    return m.group(1).lower() if m else ""
 
 
-st.title("🐟 Fish counter")
-st.caption("Count fish in underwater video, one sampled picture at a time. Everything stays on this computer.")
+def make_playable(d, orig, job):
+    """Browser-friendly H.264 copy if the original isn't already H.264 in mp4/mov."""
+    if (d / "playable.mp4").exists():
+        job["playable"] = "playable.mp4"
+        return
+    if orig.suffix.lower() in BROWSER_EXTS and probe_codec(orig) == "h264":
+        job["playable"] = orig.name
+        return
+    job["converting"] = True
+    import imageio_ffmpeg
+    tmp = d / "playable.tmp.mp4"
+    cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-i", str(orig), "-c:v", "libx264", "-preset", "veryfast",
+           "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", str(tmp)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:  # retry without audio (some GoPro audio tracks fail)
+        cmd = cmd[:cmd.index("-c:a")] + ["-an"] + cmd[cmd.index("-movflags"):]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError("Could not convert the video to a format the browser can play.")
+    tmp.rename(d / "playable.mp4")
+    job["playable"] = "playable.mp4"
+    job["converting"] = False
 
-# ---------- Step 1: choose video ----------
-videos = list_videos()
-if not videos:
-    st.warning(f"No videos found. Copy your video files (.mp4, .mov, .avi or .m4v) into this folder, then reload the page:\n\n`{VIDEO_DIR}`")
-    st.stop()
 
-locked = S.get("trim_confirmed", False)
-video = st.selectbox("1. Choose a video", videos, disabled=locked)
-if S.get("video") != video:
-    reset_all()
-    S["video"] = video
-path = VIDEO_DIR / video
-info = video_info(path)
-if info["duration"] <= 0:
-    st.error("This video could not be read. Try another file.")
-    st.stop()
-dur = info["duration"]
-st.write(f"Length: **{mmss(dur)}** ({dur:.0f} seconds)")
+def analyse(key, d, orig, model, sample_fps):
+    job = JOBS[key]
+    out = d / f"results_{model}_{sample_fps:g}.json"
+    try:
+        cap = cv2.VideoCapture(str(orig))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        nframes = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        duration = nframes / fps
+        total = int(duration * sample_fps) + 1
+        job.update(total=total, done=0)
+        conv_err = []
+        t = threading.Thread(target=lambda: _safe(make_playable, conv_err, d, orig, job))
+        t.start()
+        job["stage"] = "loading"
+        det = detector.get_detector(model, progress=lambda a, b: job.update(stage="downloading" if a < b else "loading", dl=a / b))
+        job["stage"] = "analysing"
+        samples, next_i, fi = [], 0, 0
+        step = fps / sample_fps
+        while True:
+            target = round(next_i * step)
+            if target >= nframes:
+                break
+            while fi < target:
+                if not cap.grab():
+                    break
+                fi += 1
+            ok, frame = cap.read()
+            if not ok:
+                break
+            fi += 1
+            boxes = [[b[0] / w, b[1] / h, b[2] / w, b[3] / h, round(b[4], 4)] for b in det.detect(frame)]
+            samples.append({"t": round(target / fps, 3), "frame": target, "boxes": boxes})
+            next_i += 1
+            job["done"] = next_i
+        cap.release()
+        t.join()
+        if conv_err:
+            raise conv_err[0]
+        res = {"model": model, "sample_fps": sample_fps, "min_conf": detector.MIN_CONF, "duration": duration,
+               "fps": fps, "frames": nframes, "width": w, "height": h, "samples": samples, "playable": job["playable"]}
+        out.write_text(json.dumps(res))
+        job.update(stage="done", done=len(samples), total=len(samples))
+    except Exception as e:
+        traceback.print_exc()
+        job.update(stage="error", error=friendly(e))
 
-# ---------- Step 2: trim ----------
-st.header("2. Trim the video")
-st.write("The first and last minute are skipped so stirred-up sediment can settle. You can change these.")
-d_start, d_end = default_trim(dur)
-c1, c2, c3 = st.columns([1, 1, 1])
-start = c1.number_input("Start (seconds)", 0.0, float(dur), float(S.get("start", d_start)), 1.0, disabled=locked, key="in_start")
-end = c2.number_input("End (seconds)", 0.0, float(dur), float(S.get("end", d_end)), 1.0, disabled=locked, key="in_end")
-if not locked:
-    if c3.button("Confirm trim", type="primary"):
-        if end <= start:
-            st.error("The end must be after the start.")
-        else:
-            S.update(trim_confirmed=True, start=start, end=end)
-            st.rerun()
-else:
-    c3.success(f"Trim locked: {S['start']:.0f}s to {S['end']:.0f}s")
-if st.button("Start a new session"):
-    reset_all()
-    st.rerun()
-if not locked:
-    st.info("Confirm the trim to continue.")
-    st.stop()
-start, end = S["start"], S["end"]
 
-# ---------- Step 3: enhancement ----------
-st.header("3. Make the picture easier to see")
-e1, e2, e3 = st.columns(3)
-bri = e1.slider("Brightness", -100, 100, 0)
-con = e2.slider("Contrast", 0.5, 3.0, 1.0, 0.1)
-gam = e3.slider("Gamma (higher = brighter shadows)", 0.3, 3.0, 1.0, 0.1)
-pt = st.slider("Preview picture at (seconds)", float(start), float(end), float(start), 1.0)
-pf = read_frame_at(path, pt)
-if pf is not None:
-    b, a = st.columns(2)
-    b.image(rgb(pf), caption="Before", width="stretch")
-    a.image(rgb(enhance(pf, bri, con, gam)), caption="After", width="stretch")
+def _safe(fn, errs, *a):
+    try:
+        fn(*a)
+    except Exception as e:
+        errs.append(e)
 
-# ---------- Step 4: sampling and detection ----------
-st.header("4. Find the fish")
-s1, s2, s3 = st.columns(3)
-interval = s1.number_input("Take a picture every (seconds)", 1.0, 600.0, 60.0, 1.0)
-rows = s2.number_input("Grid rows", 1, 10, 3)
-cols = s3.number_input("Grid columns", 1, 10, 3)
-yolo_ok = detect.yolo_available()
-method_label = st.radio("How should fish be found?",
-                        ["Motion detection (default)", "YOLO-Fish (AI)", "Community Fish Detector (AI)"], index=0,
-                        captions=["Looks for things that moved. No AI needed.", "AI trained on fish. Needs extra files.",
-                                  "AI trained on 1.9 million fish pictures. Needs an extra install and a model file."])
-want_cfd = method_label.startswith("Community")
-cfd_ok, cfd_problem = detect.cfd_status()
-if want_cfd and not cfd_ok:
-    st.error(f"The Community Fish Detector can't be used yet: {cfd_problem}. "
-             "Install: run `pip install -r requirements-ai.txt` once. Model file: download "
-             "cfd-rf-detr-small-1024-2026.06.06.cp-016.20260706-release.pth from "
-             "https://github.com/filippovarini/community-fish-detector/releases (release 2026.07.06) and put it in the 'models' folder. "
-             "Until then, please use Motion detection.")
-if method_label.startswith("YOLO") and not yolo_ok:
-    st.error("YOLO-Fish needs two files in the 'models' folder, and they are missing. "
-             "Get the config file (yolo-fish-2.cfg) from https://github.com/tamim662/YOLO-Fish/tree/main/models and the "
-             "weights file (merge_yolo-fish-2.weights) from the 'merged dataset' Google Drive link in that page's README. "
-             "Until then, please use Motion detection.")
-use_yolo = method_label.startswith("YOLO") and yolo_ok
-use_cfd = want_cfd and cfd_ok
-if use_yolo or use_cfd:
-    conf = st.slider("Confidence (higher = fewer, surer detections)", 0.05, 0.95, 0.4, 0.05)
-else:
-    m1, m2 = st.columns(2)
-    sens = m1.slider("Sensitivity (higher = notices fainter movement)", 1, 100, 50)
-    minsize = m2.slider("Smallest fish size (pixels of area)", 20, 5000, 300, 10)
-method = "YOLO-Fish" if use_yolo else "CommunityFishDetector" if use_cfd else "Motion"
-can_run = not (method_label.startswith("YOLO") and not yolo_ok) and not (want_cfd and not cfd_ok)
 
-if st.button("Run detection", type="primary", disabled=not can_run):
-    times = sample_times(start, end, interval)
-    fdir = report.out_dir(video, "frames")
-    frames, bar = [], st.progress(0.0, text="Looking for fish...")
-    enh = lambda f: enhance(f, bri, con, gam)
-    for i, t in enumerate(times):
-        if use_yolo or use_cfd:
-            raw = read_frame_at(path, t)
-            if raw is None:
-                continue
-            img = enh(raw)
-            dets = (detect.detect_yolo if use_yolo else detect.detect_cfd)(img, conf, rows, cols)
-        else:
-            dets, raw = detect.detect_motion(path, t, enh, sens, minsize, rows, cols)
-            if raw is None:
-                continue
-            img = enh(raw)
-        jpg = fdir / f"{Path(video).stem}_{mmss(t)}.jpg"
-        cv2.imwrite(str(jpg), img)
-        for d in dets:
-            d.update(is_fish=True, species="Unknown")
-        frames.append({"t": t, "jpg": str(jpg), "dets": dets, "missed": 0, "confirmed": False})
-        bar.progress((i + 1) / len(times), text=f"Picture {i + 1} of {len(times)}")
-    bar.empty()
-    S.update(frames=frames, idx=0, run_id=S.get("run_id", 0) + 1, rows=rows, cols=cols,
-             settings=dict(method=method, start=start, end=end, interval=interval, brightness=bri, contrast=con, gamma=gam))
-    st.rerun()
+def friendly(e):
+    s = str(e)
+    if "No space left" in s or "out of space" in s:
+        return "The computer's disk is full. Free some space and try again."
+    if "urlopen" in s.lower() or "CERTIFICATE" in s:
+        return "Couldn't download the fish detector. Check the internet connection and try again."
+    return s or e.__class__.__name__
 
-frames = S.get("frames")
-if not frames:
-    st.stop()
 
-# ---------- Step 5: review ----------
-st.header("5. Check the results")
-n = len(frames)
-S["idx"] = min(S.get("idx", 0), n - 1)
-nav1, nav2, nav3 = st.columns([1, 2, 1])
-if nav1.button("◀ Previous", disabled=S["idx"] == 0):
-    S["idx"] -= 1
-    st.rerun()
-if nav3.button("Next ▶", disabled=S["idx"] == n - 1):
-    S["idx"] += 1
-    st.rerun()
-i = S["idx"]
-f = frames[i]
-nav2.subheader(f"Frame {i + 1} of {n}  (at {mmss(f['t'])})")
-
-img = cv2.imread(f["jpg"])
-left, right = st.columns([3, 2])
-with right:
-    species = species_list()
-    base = pd.DataFrame({"Fish #": range(1, len(f["dets"]) + 1),
-                         "Grid cell": [d["cell"] for d in f["dets"]],
-                         "Is a fish": [d["is_fish"] for d in f["dets"]],
-                         "Species": [d["species"] for d in f["dets"]]})
-    if f["dets"]:
-        st.caption("Untick 'Is a fish' for mistakes (algae, sediment, bubbles). Pick a species if you know it.")
-        edited = st.data_editor(
-            base, key=f"ed_{S['run_id']}_{i}", hide_index=True, width="stretch",
-            disabled=["Fish #", "Grid cell"],
-            column_config={"Species": st.column_config.SelectboxColumn("Species", options=species, required=True),
-                           "Is a fish": st.column_config.CheckboxColumn("Is a fish")})
-        for d, (_, row) in zip(f["dets"], edited.iterrows()):
-            d["is_fish"], d["species"] = bool(row["Is a fish"]), row["Species"]
+@app.post("/api/upload")
+async def upload(file: UploadFile = File(...), model: str = Form("nano"), sample_fps: float = Form(2.0)):
+    if model not in detector.MODELS:
+        raise HTTPException(400, "unknown model")
+    sample_fps = max(0.1, min(float(sample_fps), 30.0))
+    tmpdir = UPLOADS / "_incoming"
+    tmpdir.mkdir(exist_ok=True)
+    tmp = tmpdir / (hashlib.md5(file.filename.encode()).hexdigest() + ".part")
+    sha = hashlib.sha256()
+    with tmp.open("wb") as f:
+        while chunk := await file.read(4 * 1024 * 1024):
+            sha.update(chunk)
+            f.write(chunk)
+    vid = sha.hexdigest()[:16]
+    d = UPLOADS / vid
+    d.mkdir(exist_ok=True)
+    ext = Path(file.filename).suffix.lower() or ".mp4"
+    if not list(d.glob("original.*")):
+        shutil.move(str(tmp), d / f"original{ext}")
+        (d / "name.txt").write_text(file.filename)
     else:
-        st.info("Nothing was detected in this picture.")
-    f["missed"] = st.number_input("Fish missed by the detector", 0, 500, int(f["missed"]), key=f"miss_{S['run_id']}_{i}")
-    f["confirmed"] = st.checkbox("Count confirmed", f["confirmed"], key=f"conf_{S['run_id']}_{i}")
-    c = report.frame_counts(f)
-    st.metric("Final count for this frame", c["final"])
-with left:
-    ann = detect.draw_detections(draw_grid(img, S["rows"], S["cols"]), f["dets"], [d["is_fish"] for d in f["dets"]])
-    st.image(rgb(ann), width="stretch")
-    if st.button("Save screenshot"):
-        p = report.save_screenshot(video, f["t"], ann)
-        st.success(f"Screenshot saved to: {p}")
+        tmp.unlink()
+    orig = original_path(d)
+    key = f"{vid}_{model}_{sample_fps:g}"
+    cached = d / f"results_{model}_{sample_fps:g}.json"
+    if cached.exists():
+        JOBS[key] = {"stage": "done", "cached": True}
+    elif JOBS.get(key, {}).get("stage") not in ("loading", "downloading", "analysing"):
+        JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
+        threading.Thread(target=analyse, args=(key, d, orig, model, sample_fps), daemon=True).start()
+    return {"id": vid, "key": key, "model": model, "sample_fps": sample_fps}
 
-# ---------- Step 6: totals and report ----------
-st.header("6. Results and report")
-nconf = sum(1 for x in frames if x["confirmed"])
-m1, m2 = st.columns(2)
-m1.metric("MeanCount (average fish per picture)", f"{report.mean_count(frames):.2f}")
-m2.metric("Frames confirmed", f"{nconf} of {n}")
-if nconf == n:
-    st.success("Every frame is confirmed. The report will be marked FINAL.")
-else:
-    st.warning(f"{n - nconf} frame(s) not confirmed yet. The report will be marked NOT FINAL.")
-if st.button("Build report"):
-    d, files, summ = report.build_report(video, frames, S["settings"])
-    S["report_files"], S["report_dir"], S["report_status"] = files, str(d), summ["report_status"]
-if "report_files" in S:
-    st.success(f"Report saved in: {S['report_dir']}  —  Status: {S['report_status']}")
-    for name, data in S["report_files"].items():
-        st.download_button(f"Download {name}", data, file_name=name, mime="text/csv", key=f"dl_{name}")
+
+@app.get("/api/status/{vid}")
+def status(vid: str, model: str = "nano", sample_fps: float = 2.0):
+    d = vdir(vid)
+    key = f"{vid}_{model}_{sample_fps:g}"
+    if (d / f"results_{model}_{sample_fps:g}.json").exists():
+        return {"stage": "done"}
+    return JOBS.get(key, {"stage": "unknown"})
+
+
+@app.get("/api/results/{vid}")
+def results(vid: str, model: str = "nano", sample_fps: float = 2.0):
+    p = vdir(vid) / f"results_{model}_{sample_fps:g}.json"
+    if not p.exists():
+        raise HTTPException(404, "not ready")
+    data = json.loads(p.read_text())
+    n = vdir(vid) / "name.txt"
+    data["name"] = n.read_text() if n.exists() else ""
+    return JSONResponse(data)
+
+
+@app.get("/api/models")
+def models():
+    return {k: v["label"] for k, v in detector.MODELS.items() if k != "yolo"}
+
+
+@app.get("/video/{vid}/{name}")
+def video(vid: str, name: str):
+    p = vdir(vid) / Path(name).name
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p)
+
+
+@app.get("/")
+def index():
+    return FileResponse(ROOT / "static" / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8000)

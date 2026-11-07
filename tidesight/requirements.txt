@@ -1,4 +1,9 @@
-streamlit
+fastapi
+uvicorn
+python-multipart
 opencv-python
 numpy
-pandas
+pillow
+imageio-ffmpeg
+rfdetr>=1.8.3
+certifi

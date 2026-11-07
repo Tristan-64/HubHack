@@ -11,3 +11,11 @@
 - Added Community Fish Detector option (RF-DETR small, 1024). `requirements-ai.txt` = rfdetr. .gitignore: models/*.pth, models/*.pt
 - Tested in a separate scratch venv (not .venv) so the main venv stays PyTorch-free; downloaded weights to models/ (git-ignored, 127 MB)
 - Deleted the scratch venv afterwards (disk was 98% full)
+
+## New task: FastAPI fish reviewer
+- Replaced Streamlit app.py with FastAPI app.py: `git mv app.py streamlit_app.py`, old requirements saved as requirements-streamlit.txt, removed requirements-ai.txt
+- New requirements.txt (fastapi, uvicorn, python-multipart, opencv-python, numpy, pillow, imageio-ffmpeg, rfdetr, certifi); `pip install -r requirements.txt` into .venv (adds torch 2.15, ~1.7 GB venv)
+- .gitignore: added uploads/, models/
+- Fix: python.org Python on macOS had no SSL root certs -> weight download failed; detector.py now uses certifi
+- Tested with a synthetic mp4v video: transcode to H.264, nano model auto-download, mps available, JSON cache reuse, HTTP range requests. Test uploads deleted.
+- design_reference.html and screenshot were NOT found in the folder; styling is my own (teal/amber, light) pending the real file.

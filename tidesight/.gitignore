@@ -18,3 +18,7 @@ videos/*
 models/*.weights
 models/*.pth
 models/*.pt
+
+# Fish reviewer
+uploads/
+models/
