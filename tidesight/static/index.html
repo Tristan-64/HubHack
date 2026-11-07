@@ -40,10 +40,12 @@
     <div class="ctrls">
       <button class="primary" id="play">▶ Play</button>
       <button id="prevFish" class="needs">⏮ Previous fish</button><button id="nextFish" class="needs">Next fish ⏭</button>
+      <button id="fBtn" title="Open the video filters">🎛 Filters<span class="badge hidden" id="fBadge">changed</span></button>
       <button id="baBtn" title="Compare the paused picture with and without your filters">◧ Before / after</button>
       <button id="stepB" class="needs" title="Back one checked picture">◀ Step</button><button id="stepF" class="needs" title="Forward one checked picture">Step ▶</button>
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
+    <div class="startrow only-filters"><button class="primary" id="startBtn">▶ Start detection</button><span class="note">Happy with how the video looks? Start detection to find the fish.</span></div>
     <input type="range" id="scrub" min="0" max="1000" value="0">
     <div class="tl needs" id="tl"><div class="head" id="head"></div></div>
     <div class="tl-l needs"><span>0 s</span><span id="endlab"></span></div>
@@ -70,9 +72,11 @@
   <section class="panel moments needs"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>
 </div>
+<div class="scrim hidden" id="scrim"></div>
+<button class="ftab" id="fTab">🎛 Filters</button>
 <aside class="side panel" id="side">
-  <h2>Video filters <small>chosen before detection</small></h2>
-  <div class="note" id="liveNote">Move a slider and the video on the left changes right away (a quick preview). When you start detection, the app makes the exact filtered video and the fish finder watches that one.</div>
+  <div class="sidehd"><h2>Video filters <small>chosen before detection</small></h2><button class="xbtn" id="fClose" title="Close (Esc)">✕</button></div>
+  <div class="note" id="liveNote">Move a slider and the video changes right away (a quick preview). When you start detection, the app makes the exact filtered video and the fish finder watches that one.</div>
   <div id="filters"></div>
   <div class="btnrow"><button id="resetF">Reset</button><button id="rerun" class="primary">Start detection</button></div>
   <div id="rrProg" class="hidden" style="margin-top:10px"><div id="rrTxt" class="note"></div><div class="bar"><i id="rrBar"></i></div></div>

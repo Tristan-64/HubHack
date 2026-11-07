@@ -51,6 +51,7 @@ async function enterFilters() {
   $('rerun').textContent = 'Start detection';
   vid.src = `/video/${VID}/${p.playable}`;
   setSliders(DEF);
+  setDrawer(true);
   await loadRuns();
 }
 
@@ -253,9 +254,23 @@ function setSliders(c) {
   filtersChanged();
 }
 let pvTimer = null;
+function dirtyUI() {
+  const dirty = !!R && !sameCfg(cfg, loadedCfg || DEF);
+  $('dirtyNote').classList.toggle('hidden', !dirty); $('fBadge').classList.toggle('hidden', !dirty);
+}
+// ---------- filter drawer ----------
+function setDrawer(open) {
+  $('side').classList.toggle('open', open); $('fTab').classList.toggle('hide', open); $('scrim').classList.toggle('hidden', !open);
+}
+$('fBtn').onclick = () => setDrawer(!$('side').classList.contains('open'));
+$('fTab').onclick = () => setDrawer(true);
+$('fClose').onclick = () => setDrawer(false);
+$('scrim').onclick = () => setDrawer(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setDrawer(false); });
+$('startBtn').onclick = () => rerun();
 function filtersChanged() {
   updateSvg(); applyPlayer();
-  if (R) $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg || DEF));
+  dirtyUI();
   clearTimeout(pvTimer); pvTimer = setTimeout(() => { if (baOn) fetchCompare(); }, 300);
 }
 vid.addEventListener('seeked', () => { if (vid.paused && baOn) fetchCompare(); });
@@ -291,7 +306,7 @@ async function adopt(res, first) {
   R = res; loadedCfg = { ...DEF, ...(res.settings || {}) };
   $('model').value = res.model; $('sfps').value = res.sample_fps;
   QS = `?model=${res.model}&sample_fps=${res.sample_fps}` + cfgParam(loadedCfg);
-  if (first) setSliders(loadedCfg); else { $('dirtyNote').classList.toggle('hidden', sameCfg(cfg, loadedCfg)); }
+  if (first) setSliders(loadedCfg); else dirtyUI();
   $('usedNote').innerHTML = `Results shown used: <b>${res.settings_text || 'Original (no changes)'}</b>`;
   if (isDef(loadedCfg)) ORIG = res;
   else if (!ORIG || ORIG.model !== res.model || ORIG.sample_fps !== res.sample_fps) {
@@ -308,7 +323,7 @@ async function loadRuns() {
 $('runs').onchange = e => { const r = RUNS[+e.target.value]; if (!r) return; setSliders(r.cfg); rerun(); };
 
 async function rerun() {
-  const btn = $('rerun'); btn.disabled = true;
+  const btn = $('rerun'); btn.disabled = true; $('startBtn').disabled = true; setDrawer(true);
   const q = baseQ() + cfgParam(cfg);
   try {
     const r = await (await fetch(`/api/analyse/${VID}${q}`, { method: 'POST' })).json();
@@ -326,8 +341,8 @@ async function rerun() {
       }
     }
     const res = await (await fetch(`/api/results/${VID}${q}`)).json();
-    await adopt(res, false); load();
-  } finally { btn.disabled = false; $('rrProg').classList.add('hidden'); }
+    await adopt(res, false); load(); setDrawer(false);
+  } finally { btn.disabled = false; $('startBtn').disabled = false; $('rrProg').classList.add('hidden'); }
 }
 $('rerun').onclick = rerun;
 
