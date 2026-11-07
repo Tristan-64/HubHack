@@ -40,7 +40,21 @@
     <div class="key"><span><i style="background:var(--teal)"></i>Confident fish</span><span><i style="background:var(--amber)"></i>Worth a second look</span></div>
     <div class="conf"><label for="conf">Count fish at confidence of at least <span id="confv">0.60</span></label>
       <input type="range" id="conf" min="0.2" max="0.95" step="0.05" value="0.6"></div>
+    <div class="spbox">
+      <div class="sprow">
+        <div class="menu"><button id="spBtn">🔬 Identify species (AI) ▾</button>
+          <div class="menuitems hidden" id="spMenu"><button id="spFrame">This frame</button><button id="spAll">Whole video</button></div></div>
+        <label for="cut" class="cutl">Call it “Unknown” if less sure than <b id="cutv">0.50</b></label>
+        <input type="range" id="cut" min="0.1" max="0.95" step="0.05" value="0.5" style="flex:1;min-width:160px;margin:0">
+      </div>
+      <div id="spMsg" class="note"></div>
+      <div id="spProg" class="hidden" style="margin-top:8px"><div id="spProgTxt" class="note"></div><div class="bar"><i id="spBar"></i></div></div>
+      <div class="note">⚠ Species names are AI <b>suggestions</b> for a person to check, not answers. “Unknown” means the AI wasn’t sure, the fish was too small, or it may be a species not on our list.</div>
+    </div>
   </section>
+
+  <section class="panel hidden" id="spSum"><h2>Species suggestions <small>AI guesses, please check by eye</small></h2><div id="spChips"></div>
+    <div class="note">Counts are fish <i>sightings</i> in the checked pictures, so one fish seen in several pictures is counted more than once.</div></section>
 
   <section class="panel moments"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>

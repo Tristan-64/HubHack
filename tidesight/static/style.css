@@ -33,3 +33,10 @@ input[type=range]{width:100%;accent-color:var(--teal);margin:10px 0 0}
 .moments .row{display:flex;gap:10px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;cursor:pointer;font-variant-numeric:tabular-nums}
 .moments .row:hover{border-color:var(--teal)}.moments .row.on{background:rgba(14,159,142,.1);border-color:var(--teal)}
 .moments .row .dot{width:9px;height:9px;border-radius:50%;background:var(--teal)}.moments .row span{color:var(--muted)}
+.spbox{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.sprow{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.cutl{font-size:14px}
+.menu{position:relative}.menuitems{position:absolute;top:100%;left:0;z-index:5;background:#fff;border:1px solid var(--line);border-radius:10px;padding:4px;margin-top:4px;box-shadow:0 6px 18px rgba(0,0,0,.12);min-width:150px}
+.menuitems button{display:block;width:100%;text-align:left;border:0}.menuitems button:hover{background:rgba(14,159,142,.1)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.chip{display:inline-block;background:rgba(14,159,142,.12);border:1px solid var(--teal);border-radius:99px;padding:3px 12px;margin:0 8px 8px 0;font-size:14px}
+.chip.unk{background:rgba(232,163,23,.14);border-color:var(--amber)}.chip b{margin-left:4px}

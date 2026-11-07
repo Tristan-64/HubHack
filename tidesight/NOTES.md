@@ -19,3 +19,9 @@
 - Fix: python.org Python on macOS had no SSL root certs -> weight download failed; detector.py now uses certifi
 - Tested with a synthetic mp4v video: transcode to H.264, nano model auto-download, mps available, JSON cache reuse, HTTP range requests. Test uploads deleted.
 - design_reference.html and screenshot were NOT found in the folder; styling is my own (teal/amber, light) pending the real file.
+
+## Species suggestions (BioCLIP 2)
+- Added species.py (lazy pybioclip import, CustomLabelsClassifier, labels = species.csv scientific names + "Actinopterygii"), API routes /api/species/*, UI in static/. requirements-ai.txt = pybioclip (NOT installed by me).
+- species.csv replaced with the 30 Nova Scotia species (the old 18-species Streamlit seed is overwritten; streamlit_app.py still reads common_name).
+- Tested with a fake classifier via FastAPI TestClient (single frame, whole video, skip-already-done, small-box -> Unknown, unavailable -> HTTP 400). Real BioCLIP not run (not installed).
+- No commands run besides tests; test upload dir removed.

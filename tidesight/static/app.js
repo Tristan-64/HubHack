@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const MINC = 0.2;
-let R = null, VID = null, momentsList = [], thr = 0.6;
+let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { available: false, byLatin: {}, generic: 'Actinopterygii', minPx: 40 }, QS = '';
 const vid = $('vid'), cv = $('cv'), ctx = cv.getContext('2d');
 
 // ---------- setup ----------
@@ -42,7 +42,7 @@ async function poll(id, model, sfps) {
     else setProg(`Analysing ${s.done} of ${s.total} frames${s.converting ? ' · preparing video for playback' : ''}`, s.total ? s.done / s.total : 0);
     await new Promise(r => setTimeout(r, 600));
   }
-  R = await (await fetch(`/api/results/${id}${q}`)).json();
+  QS = q; R = await (await fetch(`/api/results/${id}${q}`)).json();
   $('prog').classList.add('hidden');
   load();
 }
@@ -59,6 +59,16 @@ function load() {
   recompute();
 }
 const gap = () => 1 / R.sample_fps;
+// Species suggestion for one box: null = not analysed, else {name, score, maybeNew}
+function speciesFor(s, j) {
+  const e = (s.sp || {})[j]; if (!e) return null;
+  const b = s.boxes[j], px = Math.min((b[2] - b[0]) * R.width, (b[3] - b[1]) * R.height);
+  if (!e.length || px < SP.minPx) return { name: 'Unknown', score: 0, why: 'too small' };
+  const [lab, sc] = e[0];
+  if (lab === SP.generic) return { name: 'Unknown', score: sc, why: 'possibly not on the species list', maybeNew: true };
+  if (sc < cutoff) return { name: 'Unknown', score: sc, why: 'not sure' };
+  return { name: SP.byLatin[lab] || lab, score: sc };
+}
 const maxConf = s => s.boxes.reduce((m, b) => Math.max(m, b[4]), 0);
 function recompute() {
   // timeline
@@ -74,21 +84,23 @@ function recompute() {
   });
   $('sSkip').textContent = Math.round(Math.min(100, skipped / R.duration * 100)) + '%';
   // moments
-  momentsList = []; let cur = null;
+  momentsList = []; let cur = null; const tally = {}; let newish = 0;
   R.samples.forEach((s, i) => {
     const n = s.boxes.filter(b => b[4] >= thr).length;
     if (n) {
       if (cur && cur.end === i - 1) { cur.end = i; cur.max = Math.max(cur.max, n); cur.top = Math.max(cur.top, maxConf(s)); }
-      else { cur = { start: i, end: i, max: n, top: maxConf(s) }; momentsList.push(cur); }
+      else { cur = { start: i, end: i, max: n, top: maxConf(s), sp: {} }; momentsList.push(cur); }
+      s.boxes.forEach((b, j) => { if (b[4] < thr) return; const sp = speciesFor(s, j); if (sp) { cur.sp[sp.name] = (cur.sp[sp.name] || 0) + 1; tally[sp.name] = (tally[sp.name] || 0) + 1; if (sp.maybeNew) newish++; } });
     }
   });
   $('sMom').textContent = momentsList.length;
+  renderSummary(tally, newish);
   const el = $('moments');
   el.innerHTML = momentsList.length ? '' : '<p class="note">No fish at this confidence. Try moving the slider to the left.</p>';
   momentsList.forEach((m, k) => {
     const t0 = R.samples[m.start].t, dur = (m.end - m.start) * gap() + gap();
     const r = document.createElement('div'); r.className = 'row'; r.dataset.k = k;
-    r.innerHTML = `<i class="dot"></i><b>${fmt(t0, 1)}</b><span>·</span>${dur.toFixed(1)} s<span>·</span>up to ${m.max} fish<span>·</span>top ${m.top.toFixed(2)}`;
+    r.innerHTML = `<i class="dot"></i><b>${fmt(t0, 1)}</b><span>·</span>${dur.toFixed(1)} s<span>·</span>up to ${m.max} fish<span>·</span>top ${m.top.toFixed(2)}${mostly(m)}`;
     r.onclick = () => { vid.pause(); seek(t0); };
     el.appendChild(r);
   });
@@ -115,11 +127,12 @@ function draw() {
   const t = vid.currentTime || 0, i = nearest(t), s = R.samples[i];
   if (Math.abs(s.t - t) <= gap() * 1.01) {
     const vr = videoRect(); ctx.font = '600 13px -apple-system,Segoe UI,sans-serif'; ctx.textBaseline = 'top';
-    s.boxes.forEach(b => {
+    s.boxes.forEach((b, idx) => {
       const ok = b[4] >= thr, col = ok ? '#14c4af' : '#f0b429';
       const x = vr.x + b[0] * vr.w, y = vr.y + b[1] * vr.h, w = (b[2] - b[0]) * vr.w, h = (b[3] - b[1]) * vr.h;
       ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.strokeRect(x, y, w, h);
-      const label = ok ? `Fish ${b[4].toFixed(2)}` : `Fish ${b[4].toFixed(2)} · check`, tw = ctx.measureText(label).width + 10;
+      const sp = speciesFor(s, idx), spt = sp ? (sp.name === 'Unknown' ? ' · Unknown' : ` · ${sp.name} ${sp.score.toFixed(2)}`) : '';
+      const label = (ok ? `Fish ${b[4].toFixed(2)}` : `Fish ${b[4].toFixed(2)} · check`) + spt, tw = ctx.measureText(label).width + 10;
       const ly = y >= 20 ? y - 20 : y + 2;
       ctx.fillStyle = col; ctx.fillRect(x - 1, ly, tw, 18); ctx.fillStyle = '#06161a'; ctx.fillText(label, x + 4, ly + 3);
     });
@@ -154,3 +167,47 @@ $('prevFish').onclick = () => {
 };
 $('conf').oninput = e => { thr = parseFloat(e.target.value); $('confv').textContent = thr.toFixed(2); if (R) recompute(); };
 window.addEventListener('resize', draw);
+
+function mostly(m) {
+  const named = Object.entries(m.sp).sort((a, b) => b[1] - a[1]);
+  if (!named.length) return '';
+  const pick = named.find(([n]) => n !== 'Unknown') || named[0];
+  return `<span>·</span>mostly ${pick[0] === 'Unknown' ? 'Unknown' : pick[0]} <span>(AI suggestion)</span>`;
+}
+function renderSummary(tally, newish) {
+  const ents = Object.entries(tally).sort((a, b) => (a[0] === 'Unknown') - (b[0] === 'Unknown') || b[1] - a[1]);
+  $('spSum').classList.toggle('hidden', !ents.length);
+  $('spChips').innerHTML = ents.map(([n, c]) => `<span class="chip ${n === 'Unknown' ? 'unk' : ''}">${n}<b>${c}</b>${n === 'Unknown' && newish ? ` <small>(${newish} possibly not on our list)</small>` : ''}</span>`).join('');
+}
+
+// ---------- species suggestions ----------
+fetch('/api/species/info').then(r => r.json()).then(i => {
+  SP.available = i.available; SP.generic = i.generic; SP.minPx = i.min_box_px;
+  i.species.forEach(x => SP.byLatin[x.scientific] = x.common);
+  if (!i.available) {
+    $('spBtn').disabled = true;
+    $('spMsg').innerHTML = 'Species suggestions need an extra install. Stop the app, run <code>pip install -r requirements-ai.txt</code>, then start it again.';
+  } else $('spMsg').textContent = 'The first time you use this it downloads the species model (a large file) and needs internet.';
+});
+$('spBtn').onclick = e => { e.stopPropagation(); if (!$('spBtn').disabled) $('spMenu').classList.toggle('hidden'); };
+document.addEventListener('click', () => $('spMenu').classList.add('hidden'));
+$('spFrame').onclick = () => { vid.pause(); runSpecies(nearest(vid.currentTime)); };
+$('spAll').onclick = () => runSpecies(-1);
+async function runSpecies(sample) {
+  $('spMsg').textContent = ''; $('spProg').classList.remove('hidden');
+  $('spProgTxt').textContent = 'Getting the species model ready…'; $('spBar').style.width = '2%';
+  const r = await fetch(`/api/species/${VID}${QS}&conf=${thr}&sample=${sample}`, { method: 'POST' });
+  if (!r.ok) { $('spProg').classList.add('hidden'); $('spMsg').textContent = 'Could not start: ' + (await r.text()); return; }
+  while (true) {
+    const s = await (await fetch(`/api/species_status/${VID}${QS}`)).json();
+    if (s.stage === 'error') { $('spProg').classList.add('hidden'); $('spMsg').innerHTML = `<span style="color:#b3261e">${s.error}</span>`; return; }
+    if (s.stage === 'done') break;
+    if (s.stage === 'analysing') { $('spProgTxt').textContent = `Identifying fish in picture ${s.done} of ${s.total}`; $('spBar').style.width = (s.total ? s.done / s.total * 100 : 0) + '%'; }
+    await new Promise(r => setTimeout(r, 600));
+  }
+  R = await (await fetch(`/api/results/${VID}${QS}`)).json();
+  $('spProg').classList.add('hidden');
+  $('spMsg').textContent = sample < 0 ? 'Done. Species were suggested for fish at or above the confidence you had set.' : 'Done for this picture.';
+  recompute();
+}
+$('cut').oninput = e => { cutoff = parseFloat(e.target.value); $('cutv').textContent = cutoff.toFixed(2); if (R) recompute(); };

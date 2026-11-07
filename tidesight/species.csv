@@ -1,19 +1,31 @@
 common_name,scientific_name
-Atlantic cod,Gadus morhua
-pollock,Pollachius virens
-cunner,Tautogolabrus adspersus
-winter flounder,Pseudopleuronectes americanus
+Atlantic salmon,Salmo salar
+Brook trout,Salvelinus fontinalis
+Rainbow smelt,Osmerus mordax
+Alewife,Alosa pseudoharengus
+Blueback herring,Alosa aestivalis
+American eel,Anguilla rostrata
+Striped bass,Morone saxatilis
+Atlantic tomcod,Microgadus tomcod
+Mummichog,Fundulus heteroclitus
+Striped killifish,Fundulus majalis
+Atlantic silverside,Menidia menidia
+Threespine stickleback,Gasterosteus aculeatus
+Fourspine stickleback,Apeltes quadracus
+Ninespine stickleback,Pungitius pungitius
+Winter flounder,Pseudopleuronectes americanus
+Smooth flounder,Pleuronectes putnami
 Atlantic herring,Clupea harengus
 Atlantic mackerel,Scomber scombrus
-shorthorn sculpin,Myoxocephalus scorpius
-sea raven,Hemitripterus americanus
-lumpfish,Cyclopterus lumpus
-rock gunnel,Pholis gunnellus
-ocean pout,Zoarces americanus
-Atlantic tomcod,Microgadus tomcod
-white hake,Urophycis tenuis
-Atlantic silverside,Menidia menidia
-mummichog,Fundulus heteroclitus
-threespine stickleback,Gasterosteus aculeatus
-striped bass,Morone saxatilis
-American eel,Anguilla rostrata
+Pollock,Pollachius virens
+Atlantic cod,Gadus morhua
+Haddock,Melanogrammus aeglefinus
+White hake,Urophycis tenuis
+Cunner,Tautogolabrus adspersus
+Shorthorn sculpin,Myoxocephalus scorpius
+Longhorn sculpin,Myoxocephalus octodecemspinosus
+Grubby,Myoxocephalus aenaeus
+Rock gunnel,Pholis gunnellus
+Lumpfish,Cyclopterus lumpus
+Northern pipefish,Syngnathus fuscus
+American sand lance,Ammodytes americanus
