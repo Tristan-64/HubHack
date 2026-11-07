@@ -171,4 +171,31 @@ ok(c.get(f"/download/{VID}/passwd").status_code == 404, "only known files can be
 shutil.rmtree(d, ignore_errors=True)
 shutil.rmtree(appmod.OUTPUTS / "selftest", ignore_errors=True)
 
+# ---------------------------------------------------------------- 6. fish lookup (fishmorph_clean.csv)
+import fishmorph  # noqa: E402
+import pandas as pd  # noqa: E402
+
+ok(fishmorph.available(), "fishmorph_clean.csv is in the tidesight folder")
+inf = fishmorph.info()
+ok(inf["rows"] > 8000 and [t_["code"] for t_ in inf["traits"]] == ["MBl", "BEl", "VEp", "REs", "OGp", "RMl", "BLs", "PFv", "PFs", "CPt"], "all 10 traits are known")
+row = pd.read_csv(fishmorph.CSV, encoding="utf-8-sig").dropna(subset=fishmorph.CODES).iloc[250]
+vals = {k: float(row[k]) for k in fishmorph.CODES}
+top = fishmorph.search(vals)
+ok(len(top) == 5 and top[0]["species"] == row["Genus.Species"] and top[0]["difference"] == 0, "searching with a real fish's numbers finds that fish first, difference 0")
+ok(all(top[i]["difference"] <= top[i + 1]["difference"] for i in range(4)), "results are sorted closest first")
+ok(len(fishmorph.search({"MBI": 15, "bei": 4})) == 5, "capital-I names (MBI, BEI, RMI) and lower case are accepted")
+for bad, why in (({}, "nothing typed"), ({"MBl": "abc"}, "not a number"), ({"MBl": -3}, "negative length")):
+    try:
+        fishmorph.search(bad)
+        ok(False, "should reject: " + why)
+    except ValueError:
+        ok(True, "rejects " + why)
+c = TestClient(appmod.app)
+ok(c.get("/api/fishmorph/info").json()["available"], "fish lookup info endpoint works")
+r_ = c.post("/api/fishmorph/search", json={"values": {"MBl": 12, "VEp": 0.55}})
+ok(r_.status_code == 200 and len(r_.json()["results"]) == 5, "fish lookup search endpoint returns 5 fish")
+ok(c.post("/api/fishmorph/search", json={"values": {}}).status_code == 400, "empty search gives a friendly error")
+page = c.get("/").text
+ok('id="lpanel"' in page and 'id="srchBtn"' in page and 'id="lpRail"' in page and 'id="rpRail"' in page, "page has the left lookup panel and both minimise rails")
+
 print(f"selftest: {len(PASS)} checks passed")

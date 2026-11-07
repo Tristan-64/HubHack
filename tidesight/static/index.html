@@ -25,7 +25,23 @@
   <div id="err" class="err hidden"></div>
 </section>
 
-<div id="review" class="hidden"><div class="layout"><div class="main">
+<div id="review" class="hidden lp-open"><div class="layout">
+<aside class="lp panel needs" id="lpanel">
+  <button class="rail" id="lpRail" title="Open the fish lookup">🔎 Fish lookup</button>
+  <div class="pbody">
+    <div class="sidehd"><h2>Fish lookup <small>find similar fish</small></h2><button class="xbtn" id="lpClose" title="Minimise this panel">«</button></div>
+    <div class="note" id="lpSel">Click a fish box on the video to select it, then press Search fish.</div>
+    <button class="primary" id="srchBtn" disabled>🔎 Search fish</button>
+    <div id="srchForm" class="hidden">
+      <div class="note">Type the measurements you know. Blank boxes are ignored. Hover a name to see what it means.</div>
+      <div id="srchGrid"></div>
+      <div class="btnrow"><button class="primary" id="srchGo">Find the 5 closest fish</button><button id="srchClear">Clear</button></div>
+      <div class="note warn hidden" id="srchMsg"></div>
+    </div>
+    <div id="srchRes"></div>
+  </div>
+</aside>
+<div class="main">
   <section class="panel needs"><div class="stats">
     <div class="stat"><b id="sLen">–</b><span>Video length</span></div>
     <div class="stat"><b id="sSkip">–</b><span>With no fish (can be skipped)</span></div>
@@ -91,11 +107,10 @@
 
   <section class="panel moments needs"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>
-</div>
-<div class="scrim hidden" id="scrim"></div>
-<button class="ftab" id="fTab">🎛 Filters</button>
 <aside class="side panel" id="side">
-  <div class="sidehd"><h2>Video filters <small>chosen before detection</small></h2><button class="xbtn" id="fClose" title="Close (Esc)">✕</button></div>
+  <button class="rail" id="rpRail" title="Open the video filters">🎛 Filters</button>
+  <div class="pbody">
+  <div class="sidehd"><h2>Video filters <small>chosen before detection</small></h2><button class="xbtn" id="fClose" title="Minimise this panel">»</button></div>
   <div class="note" id="liveNote">Move a slider and the video changes right away (a quick preview). When you start detection, the app makes the exact filtered video and the fish finder watches that one.</div>
   <div class="gridbox">
     <label class="chk"><input type="checkbox" id="gridOn"> <b>Show a grid over the video</b></label>
@@ -110,5 +125,5 @@
   <div class="note warn hidden" id="dirtyNote">The sliders are different from the results you are looking at. Click “Re-run detection” to use them.</div>
   <label class="runsl">Saved results for this video <select id="runs"></select></label>
   <div class="note">The quick preview can’t show <b>Local contrast</b> or <b>Denoise</b>; they appear in the filtered video. Denoise makes preparing the video much slower.</div>
-</aside></div>
+</div></aside></div></div>
 </div><script src="/static/boxes.js"></script><script src="/static/editor.js"></script><script src="/static/app.js"></script></body></html>

@@ -317,15 +317,14 @@ function dirtyUI() {
   const dirty = !!R && !sameCfg(cfg, loadedCfg || DEF);
   $('dirtyNote').classList.toggle('hidden', !dirty); $('fBadge').classList.toggle('hidden', !dirty);
 }
-// ---------- filter drawer ----------
-function setDrawer(open) {
-  $('side').classList.toggle('open', open); $('fTab').classList.toggle('hide', open); $('scrim').classList.toggle('hidden', !open);
-}
-$('fBtn').onclick = () => setDrawer(!$('side').classList.contains('open'));
-$('fTab').onclick = () => setDrawer(true);
+// ---------- side panels (they push the video; they never cover it) ----------
+function setDrawer(open) { $('review').classList.toggle('rp-open', open); }          // right: video filters
+function setLeft(open) { $('review').classList.toggle('lp-open', open); }            // left: fish lookup
+$('fBtn').onclick = () => setDrawer(!$('review').classList.contains('rp-open'));
+$('rpRail').onclick = () => setDrawer(true);
 $('fClose').onclick = () => setDrawer(false);
-$('scrim').onclick = () => setDrawer(false);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') setDrawer(false); });
+$('lpRail').onclick = () => setLeft(true);
+$('lpClose').onclick = () => setLeft(false);
 $('startBtn').onclick = () => rerun();
 function filtersChanged() {
   updateSvg(); applyPlayer();
@@ -534,6 +533,7 @@ function renderSel() {
   $('restoreBtn').classList.toggle('hidden', !(b && b.rejected));
   $('resetBtn').classList.toggle('hidden', !(b && b.kind === 'ai' && b.edited));
   $('undoBtn').disabled = HIST.size === 0;
+  renderLookup();
 }
 
 function renderReview() {
@@ -589,3 +589,57 @@ function gridChanged() {
   if (R) renderReview(); draw();
 }
 ['gridOn', 'gridRows', 'gridCols'].forEach(id => $(id).addEventListener('input', gridChanged));
+
+
+// ======================= fish lookup: closest fish in fishmorph_clean.csv =======================
+let FM = null, lookupFor = null;
+const FMVALS = {}, FMRES = {};     // remembered per box while this page is open
+fetch('/api/fishmorph/info').then(r => r.json()).then(i => { FM = i; buildLookup(); renderLookup(); }).catch(() => { FM = { available: false }; });
+const fnum = v => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 100) / 100);
+function buildLookup() {
+  if (!FM || !FM.available) return;
+  $('srchGrid').innerHTML = FM.traits.map(t => `<label class="fmrow" title="${t.name}: ${t.hint}"><span><b>${t.code}</b> <small>${t.name}</small></span><input type="number" step="any" data-code="${t.code}" placeholder="e.g. ${fnum(t.median)}"></label>`).join('');
+  $('srchGrid').querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
+    if (!lookupFor) return; (FMVALS[lookupFor] = FMVALS[lookupFor] || {})[inp.dataset.code] = inp.value;
+  }));
+}
+function renderLookup() {
+  const b = R ? selBox() : null, ok = !!(FM && FM.available);
+  $('srchBtn').disabled = !b || !ok;
+  $('lpSel').innerHTML = FM && !FM.available ? 'The fish list <code>fishmorph_clean.csv</code> was not found in the tidesight folder.'
+    : b ? `Selected: <b>${b.label.replace(/</g, '&lt;')}</b> · ${fmt(R.samples[b.i].t, 1)} ${b.kind === 'ai' ? `· AI confidence ${b.conf.toFixed(2)}` : '· your box'}`
+    : 'Click a fish box on the video to select it, then press Search fish.';
+  const id = b ? b.id : null;
+  if (id !== lookupFor) {               // a different box was selected: show its own numbers and results
+    lookupFor = id;
+    const v = (id && FMVALS[id]) || {};
+    $('srchGrid').querySelectorAll('input').forEach(inp => { inp.value = v[inp.dataset.code] || ''; });
+    $('srchMsg').classList.add('hidden');
+    showResults(id ? FMRES[id] : null);
+    if (!id) $('srchForm').classList.add('hidden');
+  }
+}
+$('srchBtn').onclick = () => $('srchForm').classList.toggle('hidden');
+$('srchClear').onclick = () => { $('srchGrid').querySelectorAll('input').forEach(i => { i.value = ''; }); if (lookupFor) { FMVALS[lookupFor] = {}; FMRES[lookupFor] = null; } showResults(null); $('srchMsg').classList.add('hidden'); };
+$('srchGo').onclick = async () => {
+  if (!lookupFor) return;
+  const values = {}; $('srchGrid').querySelectorAll('input').forEach(i => { if (i.value !== '') values[i.dataset.code] = parseFloat(i.value); });
+  const msg = $('srchMsg'); msg.classList.add('hidden');
+  const r = await fetch('/api/fishmorph/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values, k: 5 }) });
+  if (!r.ok) { let t = ''; try { t = (await r.json()).detail; } catch { } msg.textContent = t || 'Search failed.'; msg.classList.remove('hidden'); return; }
+  const res = (await r.json()).results; FMRES[lookupFor] = res; showResults(res);
+};
+function showResults(res) {
+  const el = $('srchRes');
+  if (!res) { el.innerHTML = ''; return; }
+  if (!res.length) { el.innerHTML = '<p class="note">No fish had enough of those measurements to compare. Try fewer numbers.</p>'; return; }
+  el.innerHTML = '<p class="note"><b>Closest fish</b> (a lower difference is a closer match)</p>' + res.map((m, k) =>
+    `<div class="fmres"><b>${k + 1}. <i>${m.species}</i></b><div class="note">${m.family} · ${m.order}</div>
+     <div class="note">Difference <b>${m.difference.toFixed(2)}</b> · compared ${m.compared} of the ${m.typed} number${m.typed === 1 ? '' : 's'} you typed</div>
+     <div class="fmvals">${Object.entries(m.values).map(([c, v]) => `${c} ${v === null ? '–' : fnum(v)}`).join(' · ')}</div>
+     <button data-name="${m.species}">Use as this box’s name</button></div>`).join('');
+}
+$('srchRes').addEventListener('click', e => {
+  const b = e.target.closest('button[data-name]'); if (!b || !SEL) return;
+  const name = b.dataset.name; edit(() => Boxes.patchBox(R, DOC, SEL, { label: name })); renderSel();
+});

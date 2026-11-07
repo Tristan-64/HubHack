@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Layout test</title></head>
+<body>
+<script>
+// Loads the REAL page, shows the review screen, and measures that the side panels push the video instead of covering it.
+fetch('/static/index.html').then(r => r.text()).then(html => {
+  const test = `<script>
+  setTimeout(() => {
+    const $ = id => document.getElementById(id), rv = $('review'), log = [];
+    document.head.insertAdjacentHTML('beforeend', '<style>.layout{transition:none!important}</style>');   // the real page animates; measure the end state
+    rv.classList.remove('hidden', 'stage-filters');
+    const W = () => $('stage').getBoundingClientRect().width;
+    const set = (l, r) => { rv.classList.toggle('lp-open', l); rv.classList.toggle('rp-open', r); };
+    const settle = () => new Promise(res => setTimeout(res, 450));
+    const ok = (c, m) => log.push((c ? 'PASS ' : 'FAIL ') + m);
+    (async () => {
+      set(false, false); await settle(); const none = W();
+      set(true, false); await settle(); const left = W();
+      set(false, true); await settle(); const right = W();
+      set(true, true); await settle(); const both = W();
+      ok(none > left && none > right && left > both && right > both, 'video gets smaller as panels open, bigger as they close: ' + [none, left, right, both].map(Math.round).join(' / '));
+      const s = $('stage').getBoundingClientRect(), lp = $('lpanel').getBoundingClientRect(), sd = $('side').getBoundingClientRect();
+      ok(lp.right <= s.left + 1, 'left panel does not cover the video'); ok(sd.left >= s.right - 1, 'right panel does not cover the video');
+      ok(getComputedStyle($('side')).position !== 'fixed', 'right panel is not a floating overlay');
+      set(false, false); await settle();
+      ok(getComputedStyle($('lpRail')).display !== 'none' && getComputedStyle($('rpRail')).display !== 'none', 'minimised panels leave a small button to open them');
+      ok(lp.width > 0 && $('lpanel').getBoundingClientRect().width < 80 && $('side').getBoundingClientRect().width < 80, 'minimised panels are thin rails');
+      set(true, true); await settle();
+      $('lpClose').click(); await settle(); ok(!rv.classList.contains('lp-open'), 'the left minimise button works');
+      $('lpRail').click(); await settle(); ok(rv.classList.contains('lp-open'), 'the left rail reopens it');
+      $('fClose').click(); await settle(); ok(!rv.classList.contains('rp-open'), 'the right minimise button works');
+      $('rpRail').click(); await settle(); ok(rv.classList.contains('rp-open'), 'the right rail reopens it');
+      const pre = document.createElement('pre'); pre.id = 'result';
+      pre.textContent = log.join('\\n') + '\\n' + (log.some(l => l.startsWith('FAIL')) ? 'FAILED' : 'ALL PASS ' + log.length);
+      document.body.appendChild(pre);
+    })();
+  }, 600);
+  <\/script>`;
+  document.open(); document.write(html.replace('</body>', test + '</body>')); document.close();
+});
+</script></body></html>

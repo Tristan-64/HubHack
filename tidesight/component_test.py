@@ -35,14 +35,21 @@ def main():
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         r = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=4000", "--dump-dom",
                             f"http://127.0.0.1:{port}/static/test_editor.html"], capture_output=True, text=True, timeout=90)
+        r2 = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--window-size=1440,900", "--virtual-time-budget=8000",
+                             "--dump-dom", f"http://127.0.0.1:{port}/static/test_layout.html"], capture_output=True, text=True, timeout=90)
         srv.shutdown()
-    m = re.search(r'<pre id="result"[^>]*>(.*?)</pre>', r.stdout, re.S)
-    if not m:
-        print("component test: no result found.\n", r.stderr[-500:])
-        return 1
-    out = html.unescape(m.group(1))
-    print(out)
-    return 0 if "ALL PASS" in out else 1
+    status = 0
+    for name, res_ in (("editor", r), ("layout", r2)):
+        m = re.search(r'<pre id="result"[^>]*>(.*?)</pre>', res_.stdout, re.S)
+        if not m:
+            print(f"component test ({name}): no result found.\n", res_.stderr[-500:])
+            status = 1
+            continue
+        out = html.unescape(m.group(1))
+        print(out)
+        if "ALL PASS" not in out:
+            status = 1
+    return status
 
 
 if __name__ == "__main__":

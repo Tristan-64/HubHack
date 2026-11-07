@@ -59,3 +59,8 @@
 - boxes.js: countedAt() (the one counting rule, same as report counted_total); app.js uses it for the badge (#cntBig on the video) and the bar; tests: Node (adds/removes/restore/accept), selftest (page count == frames.csv), Chrome component test (draw/delete/undo). No installs.
 
 - Count badge now shows where the number comes from: "AI x + you y" (countedAt returns ai/own).
+
+## Side panels + fish lookup
+- Layout: 3-column grid (left lookup | video | right filters); both panels minimise to rails; removed the floating filter drawer/scrim/tab; fixed a stray </div> that had put the filters aside outside the layout
+- fishmorph.py: nearest-species search over fishmorph_clean.csv (robust-scaled traits, log for MBl/BEl, missing-aware, aliases MBI/BEI/RMI); app.py /api/fishmorph/info + /search; left panel UI in static/app.js
+- Tests: selftest.py (lookup + endpoints), component_test.py (static/test_layout.html measures the real page: video shrinks/grows, panels never cover it, rails work). Screenshot checked by eye. No installs.

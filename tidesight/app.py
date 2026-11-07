@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import detector
+import fishmorph
 import review
 import species
 from enhance import describe_cfg, enhance_frame, normalize_cfg, settings_id
@@ -545,6 +546,24 @@ def download(vid: str, name: str):
     if not p.exists():
         raise HTTPException(404, "not made yet")
     return FileResponse(p, filename=name)
+
+
+@app.get("/api/fishmorph/info")
+def fishmorph_info():
+    if not fishmorph.available():
+        return {"available": False, "rows": 0, "traits": []}
+    return {"available": True, **fishmorph.info()}
+
+
+@app.post("/api/fishmorph/search")
+async def fishmorph_search(request: Request):
+    if not fishmorph.available():
+        raise HTTPException(404, "fishmorph_clean.csv was not found in the tidesight folder.")
+    body = await request.json()
+    try:
+        return {"results": fishmorph.search(body.get("values") or {}, int(body.get("k") or 5))}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/models")
