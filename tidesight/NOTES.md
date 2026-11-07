@@ -54,3 +54,6 @@
 - static/: "Fish in this picture" count bar (updateCount/countNow/peakCount), grid overlay in the Filters drawer (drawGrid, rows/cols 1-12), Cell column in the Boxes list
 - review.py: grid_cell(), grid_cell column in annotations.csv, grid in summary.csv; app.py /api/export takes rows & cols
 - selftest.py: grid_cell checks. Box add/remove/edit already existed (previous task), nothing new needed for that.
+
+## Count badge on the video
+- boxes.js: countedAt() (the one counting rule, same as report counted_total); app.js uses it for the badge (#cntBig on the video) and the bar; tests: Node (adds/removes/restore/accept), selftest (page count == frames.csv), Chrome component test (draw/delete/undo). No installs.

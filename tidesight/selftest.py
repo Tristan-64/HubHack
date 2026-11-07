@@ -88,7 +88,10 @@ with tempfile.TemporaryDirectory() as td:
     fx = Path(td) / "fx.json"
     fx.write_text(json.dumps({"results": res, "state": state}))
     out = subprocess.run(["node", str(ROOT / "tests" / "boxes_node_test.js"), str(fx)], capture_output=True, text=True, check=True).stdout
-    js = {b["id"]: b for b in json.loads(out)}
+    parsed = json.loads(out)
+    js = {b["id"]: b for b in parsed["boxes"]}
+    py_counts = [sum(1 for b in review.materialize(res, state, 0.6) if b["sample"] == i and b["counted"]) for i in range(len(res["samples"]))]
+    ok(parsed["counts"] == py_counts, f"fish count per picture agrees between the page and the report: {py_counts}")
     for bid, b in boxes.items():
         ok(js[bid]["edited"] == b["edited"] and js[bid]["label"] == b["label"] and js[bid]["rejected"] == (b["status"] == "rejected"),
            f"JS and Python agree on box {bid}")
@@ -153,6 +156,7 @@ ok(c.put(f"/api/review/{VID}", params=q, json=state).json()["saved"], "edits sav
 back = c.get(f"/api/review/{VID}", params=q).json()           # what a page refresh would load
 ok(back["ai"]["0:0"]["label"] == "cunner" and back["ai"]["0:1"]["rejected"] and back["own"][0]["id"] == "r1", "edits survive a reload (new request)")
 e = c.post(f"/api/export/{VID}", params={**q, "thr": 0.6}).json()
+ok('id="cntBig"' in c.get("/").text, "the fish count badge is on the page")
 ok(set(e["files"]) >= {"annotations.csv", "frames.csv", "summary.csv"}, "export wrote the CSV files")
 ok(c.get(f"/download/{VID}/annotations.csv").status_code == 200, "CSV download works")
 ok(c.post(f"/api/outline/{VID}", params={**q, "thr": 0.6}).json()["started"], "outlined video started")

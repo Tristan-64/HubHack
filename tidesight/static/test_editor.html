@@ -73,6 +73,14 @@ t('shortcuts work again once focus leaves the name box', () => {
 });
 t('Escape deselects', () => { SEL = 'm0-0'; key('Escape'); eq(SEL === null, 'still selected'); });
 
+t('the fish count goes up when a box is added and down when one is removed', () => {
+  doc = B.emptyDoc(); SEL = null; const N = () => B.countedAt(res, doc, 0, .6).n;
+  eq(N() === 1, 'start count should be 1, is ' + N());
+  drag(100, 100, 220, 180); eq(N() === 2, 'after drawing a box: ' + N());
+  SEL = 'm0-0'; key('Delete'); eq(N() === 1, 'after deleting the AI box: ' + N());
+  key('z', document.body, { ctrlKey: true }); eq(N() === 2, 'after undo: ' + N());
+});
+
 const failed = log.filter(l => l.startsWith('FAIL'));
 document.getElementById('result').textContent = log.join('\n') + '\n' + (failed.length ? 'FAILED ' + failed.length : 'ALL PASS ' + log.length);
 </script></body></html>

@@ -32,6 +32,15 @@
     doc.own.forEach(o => { if (o.sample === i) out.push({ id: o.id, kind: 'own', i, j: null, ...pick(o), conf: null, rejected: false, edited: false, orig: null }); });
     return out;
   }
+  // Fish counted in picture i: not removed, and (the reviewer's own box, or confident, or edited). Same rule as the report.
+  function countedAt(res, doc, i, thr) {
+    const by = {}; let n = 0, unsure = 0;
+    boxesAt(res, doc, i).forEach(b => {
+      if (b.rejected) return;
+      if (b.kind === 'own' || b.conf >= thr || b.edited) { n++; by[b.label] = (by[b.label] || 0) + 1; } else unsure++;
+    });
+    return { n, unsure, by };
+  }
   function pick(e) { const r = {}; C.forEach(c => { if (c in e) r[c] = e[c]; }); if (e.label) r.label = e.label; return r; }
   function allBoxes(res, doc) { const o = []; res.samples.forEach((_, i) => o.push(...boxesAt(res, doc, i))); return o; }
   function findBox(res, doc, id) {
@@ -106,7 +115,7 @@
     return { push(doc) { st.push(JSON.stringify(doc)); if (st.length > limit) st.shift(); }, undo() { return st.length ? normalizeDoc(JSON.parse(st.pop())) : null; }, get size() { return st.length; } };
   }
 
-  const api = { DEFAULT, emptyDoc, normalizeDoc, clone, boxesAt, allBoxes, findBox, patchBox, rejectAI, restoreAI, resetAI, deleteOwn, addOwn,
+  const api = { DEFAULT, emptyDoc, normalizeDoc, clone, boxesAt, countedAt, allBoxes, findBox, patchBox, rejectAI, restoreAI, resetAI, deleteOwn, addOwn,
     normRect, hit, inside, moveRect, resizeRect, labelSuggestions, createHistory, differs };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.Boxes = api;
 })(typeof window !== 'undefined' ? window : globalThis);

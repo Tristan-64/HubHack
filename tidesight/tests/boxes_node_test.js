@@ -3,7 +3,8 @@
 const B = require('../static/boxes.js'), fs = require('fs'), assert = require('assert');
 if (process.argv[2]) {
   const fx = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')), doc = B.normalizeDoc(fx.state);
-  console.log(JSON.stringify(B.allBoxes(fx.results, doc).map(b => ({ id: b.id, label: b.label, edited: b.edited, rejected: b.rejected, kind: b.kind }))));
+  const thr = parseFloat(process.argv[3] || '0.6');
+  console.log(JSON.stringify({ boxes: B.allBoxes(fx.results, doc).map(b => ({ id: b.id, label: b.label, edited: b.edited, rejected: b.rejected, kind: b.kind })), counts: fx.results.samples.map((_, i) => B.countedAt(fx.results, doc, i, thr).n) }));
   process.exit(0);
 }
 const res = { samples: [{ t: 0, frame: 0, boxes: [[.1, .1, .3, .3, .9], [.5, .5, .7, .7, .4]] }, { t: .5, frame: 15, boxes: [[.2, .2, .4, .4, .8]] }] };
@@ -46,4 +47,14 @@ ok(B.findBox(res, old, 'r9').label === 'fish', 'old own box gets label fish');
 // undo
 const h = B.createHistory(); let dd = B.emptyDoc(); h.push(dd); B.addOwn(dd, 0, { x1: .1, y1: .1, x2: .2, y2: .2 });
 const back = h.undo(); ok(back.own.length === 0 && h.size === 0, 'undo restores the previous state');
+// live fish count goes up and down with every add / remove
+const cr = { samples: [{ t: 0, frame: 0, boxes: [[.1, .1, .3, .3, .9], [.5, .5, .7, .7, .8], [.6, .1, .8, .3, .3]] }] };
+let cd = B.emptyDoc(); const N = () => B.countedAt(cr, cd, 0, .6).n;
+ok(N() === 2, 'count starts at the 2 confident AI boxes (the 0.3 one is unsure)');
+const own1 = B.addOwn(cd, 0, { x1: .1, y1: .6, x2: .2, y2: .8 }); ok(N() === 3, 'adding a box: count goes up');
+B.addOwn(cd, 0, { x1: .3, y1: .6, x2: .4, y2: .8 }); ok(N() === 4, 'adding another: up again');
+B.rejectAI(cr, cd, 'm0-0'); ok(N() === 3, 'removing an AI box: count goes down');
+B.deleteOwn(cd, own1); ok(N() === 2, 'removing your own box: count goes down');
+B.restoreAI(cr, cd, 'm0-0'); ok(N() === 3, 'restoring an AI box: count goes up');
+B.patchBox(cr, cd, 'm0-2', { label: 'x' }); ok(N() === 4, 'accepting a weak (amber) box by editing it: count goes up');
 console.log(`boxes.js: ${n} checks passed`);

@@ -141,21 +141,17 @@ function drawGrid() {
 // How many fish are in the picture on screen (same rule as the report: not rejected, and confident or edited)
 function countNow() {
   const i = R ? shownIndex() : -1; if (i < 0) return { n: 0, by: {}, unsure: 0, none: true };
-  const by = {}; let n = 0, unsure = 0;
-  Boxes.boxesAt(R, DOC, i).forEach(b => {
-    if (b.rejected) return;
-    if (b.kind === 'own' || b.conf >= thr || b.edited) { n++; by[b.label] = (by[b.label] || 0) + 1; } else unsure++;
-  });
-  return { n, by, unsure };
+  return Boxes.countedAt(R, DOC, i, thr);
 }
 function peakCount() {
   let best = 0, at = 0;
-  R.samples.forEach((s, i) => { const k = Boxes.boxesAt(R, DOC, i).filter(b => !b.rejected && (b.kind === 'own' || b.conf >= thr || b.edited)).length; if (k > best) { best = k; at = i; } });
+  R.samples.forEach((s, i) => { const k = Boxes.countedAt(R, DOC, i, thr).n; if (k > best) { best = k; at = i; } });
   return { best, at };
 }
 function updateCount() {
   if (!R) return;
   const c = countNow(), key = JSON.stringify(c) + thr + DOC.own.length;
+  const big = c.none ? '–' : String(c.n); if ($('cntBig').textContent !== big) $('cntBig').textContent = big;   // badge on the video
   if (key === lastCount) return; lastCount = key;
   $('cntNow').textContent = c.n;
   const names = Object.entries(c.by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${v}`).join(' · ');
