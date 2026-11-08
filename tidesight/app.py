@@ -28,6 +28,7 @@ app = FastAPI()
 JOBS = {}  # key -> status dict
 
 
+# Turn the ?cfg=<json> query text into a clean set of filter settings (unknown keys dropped, values clamped).
 def parse_cfg(raw):
     try:
         return normalize_cfg(json.loads(raw)) if raw else normalize_cfg()
@@ -35,14 +36,17 @@ def parse_cfg(raw):
         return normalize_cfg()
 
 
+# Path of the saved detection results for one video + model + sampling rate + filter settings.
 def rfile(d, model, fps, sid=""):
     return d / (f"results_{model}_{fps:g}.json" if not sid else f"results_{model}_{fps:g}_{sid}.json")
 
 
+# Key into JOBS (the in-memory progress table) for one background job.
 def jkey(vid, model, fps, sid="", extra=""):
     return f"{vid}_{model}_{fps:g}_{sid}{extra}"
 
 
+# Read one frame by number from a video file (used for the before/after stills).
 def read_frame(orig, idx):
     cap = cv2.VideoCapture(str(orig))
     cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, idx))
@@ -72,6 +76,7 @@ def probe_codec(path):
     return m.group(1).lower() if m else ""
 
 
+# Convert videos a browser cannot play (e.g. HEVC) into an H.264 playable.mp4.
 def make_playable(d, orig, job):
     """Browser-friendly H.264 copy if the original isn't already H.264 in mp4/mov."""
     if (d / "playable.mp4").exists():
@@ -96,6 +101,7 @@ def make_playable(d, orig, job):
     job["converting"] = False
 
 
+# Render filtered_<settings>.mp4 once: decode, apply enhance_frame, re-encode with ffmpeg. Detection then watches this video.
 def ensure_filtered(job, d, orig, cfg):
     """Render the whole video through enhance_frame -> filtered_<id>.mp4 (what the detector will see)."""
     sid = settings_id(cfg)
@@ -135,6 +141,7 @@ def ensure_filtered(job, d, orig, cfg):
     return out.name
 
 
+# Background job: make just the filtered video (no detection).
 def render_only(key, d, orig, model, sample_fps, cfg):
     job = JOBS[key]
     try:
@@ -153,6 +160,7 @@ def render_only(key, d, orig, model, sample_fps, cfg):
 PREP = {}
 
 
+# Background job after upload: probe the video and make it playable. Nothing is detected yet.
 def prepare(vid, d, orig):
     PREP[vid] = {"stage": "converting"}
     try:
@@ -164,6 +172,7 @@ def prepare(vid, d, orig):
         PREP[vid] = {"stage": "error", "error": friendly(e)}
 
 
+# Background job: render the filtered video, run the fish detector on sampled frames, save boxes with confidence >= 0.2.
 def analyse(key, d, orig, model, sample_fps, cfg):
     job = JOBS[key]
     sid = settings_id(cfg)
@@ -223,6 +232,7 @@ def _safe(fn, errs, *a):
         errs.append(e)
 
 
+# Turn an exception into a plain-language message for the page.
 def friendly(e):
     s = str(e)
     if "No space left" in s or "out of space" in s:
@@ -337,6 +347,7 @@ def runs(vid: str):
     return out
 
 
+# Encode an image as a base64 JPEG data URL for the before/after stills.
 def _jpeg(img, maxw=None):
     if maxw and img.shape[1] > maxw:
         img = cv2.resize(img, (maxw, int(img.shape[0] * maxw / img.shape[1])), interpolation=cv2.INTER_AREA)
@@ -345,6 +356,7 @@ def _jpeg(img, maxw=None):
 
 
 @app.get("/api/compare/{vid}")
+# Before/after stills: the same frame with and without the filters, plus detections on each.
 def compare(vid: str, t: float = 0.0, model: str = "nano", cfg: str = ""):
     """Original and enhanced version of one frame, each with its own detections."""
     import base64
@@ -367,10 +379,12 @@ def compare(vid: str, t: float = 0.0, model: str = "nano", cfg: str = ""):
 OUTPUTS = ROOT / "outputs"
 
 
+# Path of the reviewer-edits file (review_*.json) that goes with a results file.
 def sfile(d, model, fps, sid=""):
     return d / (f"review_{model}_{fps:g}.json" if not sid else f"review_{model}_{fps:g}_{sid}.json")
 
 
+# Load a saved results file (404 if detection has not been run with these settings).
 def load_results(d, model, fps, sid):
     p = rfile(d, model, fps, sid)
     if not p.exists():
@@ -414,6 +428,7 @@ def original_name(d, vid):
     return nm.read_text() if nm.exists() else vid
 
 
+# Background job: write outlined.mp4 with the reviewer-approved boxes drawn on it.
 def run_outline(key, d, vid, model, sample_fps, cfg, thr):
     job = JOBS[key]
     try:
@@ -450,6 +465,7 @@ def outline_status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: 
 
 
 @app.get("/download/{vid}/{name}")
+# Only a fixed list of report files can be downloaded (no arbitrary paths).
 def download(vid: str, name: str):
     d = vdir(vid)
     if name not in (review.CSV_NAME, "review_state.json", "outlined.mp4"):

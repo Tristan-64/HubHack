@@ -23,6 +23,7 @@ _loaded = {}
 _lock = threading.Lock()
 
 
+# Download the model file once into models/ (needs internet only that first time).
 def ensure_weights(name, progress=None):
     spec = MODELS[name]
     MODEL_DIR.mkdir(exist_ok=True)
@@ -48,6 +49,7 @@ def ensure_weights(name, progress=None):
     return dest
 
 
+# Prefer the Mac GPU (mps), then CUDA, else CPU.
 def _device():
     try:
         import torch
@@ -95,6 +97,7 @@ class Detector:
         return out
 
 
+# One loaded detector per model name, reused across jobs.
 def get_detector(name, progress=None):
     if name not in _loaded:
         _loaded[name] = Detector(name, progress)

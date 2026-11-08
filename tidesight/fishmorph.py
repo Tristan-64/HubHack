@@ -32,6 +32,7 @@ def available():
     return CSV.exists()
 
 
+# Accept any spelling of a trait code (e.g. MBI for MBl) and return the official one.
 def canon(code):
     c = str(code).strip()
     low = c.lower()
@@ -43,10 +44,12 @@ def canon(code):
     return None
 
 
+# Log-scale the very skewed traits (MBl, BEl) so big fish do not swamp the comparison.
 def _tf(code, v):
     return np.log10(v) if code in LOGGED else v
 
 
+# Read fishmorph_clean.csv once and cache it (restart the app after editing the CSV).
 def _load():
     if "df" in _cache:
         return _cache
@@ -71,11 +74,13 @@ def _clean(v):
     return " ".join(str(v).split())          # one line, single spaces
 
 
+# Only http/https links are accepted, so a bad CSV cell cannot become a javascript: link.
 def _url(v):
     s = _clean(v)
     return s if s.lower().startswith(("https://", "http://")) else ""     # never javascript: or data: links
 
 
+# Picture, credit, licence and source link for one species (None if it has no usable picture).
 def _image(row):
     """Picture details for a species, or None when the table has no usable picture for it."""
     url, thumb = _url(row.get("image_url")), _url(row.get("thumbnail_url"))
@@ -86,6 +91,7 @@ def _image(row):
             "page": _url(row.get("image_page"))}
 
 
+# What the page needs to build the lookup form: trait names, typical values, picture counts.
 def info():
     st = _load()["stats"]
     df = _load()["df"]
@@ -94,6 +100,7 @@ def info():
             "traits": [{"code": c, "name": n, "hint": h, "min": st[c]["min"], "median": st[c]["median"], "max": st[c]["max"]} for c, n, h in TRAITS]}
 
 
+# Closest k species: robust-scale each typed trait, then root-mean-square difference over the traits both sides have.
 def search(values, k=5):
     """values: {trait code: number}. Returns the k closest species (smaller difference = closer)."""
     used = {}

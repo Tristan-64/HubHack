@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 
 
+# Older simple version, still used by the legacy Streamlit app.
 def enhance(frame, brightness=0, contrast=1.0, gamma=1.0):
     """brightness -100..100, contrast 0.5..3, gamma 0.3..3 (>1 brightens shadows)."""
     out = cv2.convertScaleAbs(frame, alpha=contrast, beta=brightness)
@@ -25,6 +26,7 @@ LIMITS = {"denoise": (0, 20), "brightness": (-100, 100), "contrast": (0.5, 3.0),
           "saturation": (0, 3.0), "warmth": (-50, 50), "sharpen": (0, 3.0)}
 
 
+# Fill in missing filter settings with defaults and clamp each one to its allowed range.
 def normalize_cfg(cfg=None):
     out = dict(DEFAULTS)
     for k, v in (cfg or {}).items():
@@ -41,6 +43,7 @@ def is_default(cfg):
     return normalize_cfg(cfg) == DEFAULTS
 
 
+# Short id for a set of settings, used in file names ("" for the defaults so old results still match).
 def settings_id(cfg):
     """'' for the original (no changes), otherwise a short stable hash of the settings."""
     c = normalize_cfg(cfg)
@@ -49,6 +52,7 @@ def settings_id(cfg):
     return hashlib.sha1(json.dumps(c, sort_keys=True).encode()).hexdigest()[:10]
 
 
+# The filters, in order: denoise, brightness/contrast, gamma, local contrast (CLAHE), colour strength, warmth, sharpen.
 def enhance_frame(frame_bgr, cfg=None):
     c = normalize_cfg(cfg)
     if c == DEFAULTS:
@@ -79,6 +83,7 @@ def enhance_frame(frame_bgr, cfg=None):
     return img
 
 
+# Plain-language list of the settings that differ from the defaults.
 def describe_cfg(cfg):
     """Plain-language list of the settings that differ from the defaults."""
     c = normalize_cfg(cfg)

@@ -75,6 +75,7 @@ function eff(i) {
   return Boxes.boxesAt(R, DOC, i).filter(b => !b.rejected).map(b => ({ conf: b.kind === 'own' ? 1 : b.conf, j: b.j }));
 }
 const maxOf = arr => arr.reduce((m, b) => Math.max(m, b.conf), 0);
+// Redraw everything that depends on the boxes or the confidence slider: shaded timeline, ticks, Boxes list.
 function recompute() {
   // timeline
   const tl = $('tl'); tl.querySelectorAll('.seg').forEach(e => e.remove());
@@ -114,6 +115,7 @@ function updateCount() {
   $('cntNow').textContent = c.none ? '–' : c.n;
   $('cntWho').textContent = c.none ? '(move the video to a checked picture)' : `(${c.ai} found automatically + ${c.own} added by you)`;
 }
+// Index of the checked picture currently on screen, or -1 if the video is between checked pictures.
 function shownIndex() { const t = vid.currentTime || 0, i = nearest(t); return Math.abs(R.samples[i].t - t) <= gap() * 1.01 ? i : -1; }
 function shownBoxes(i) { return i < 0 ? [] : Boxes.boxesAt(R, DOC, i); }
 
@@ -124,11 +126,13 @@ function nearest(t) {
 }
 function seek(t) { vid.currentTime = Math.max(0, Math.min(M().duration, t)); }
 
+// Where the video really sits inside the canvas (it is letterboxed), so boxes line up with the picture.
 function videoRect() {
   const W = cv.clientWidth, H = cv.clientHeight, vw = vid.videoWidth || M().width, vh = vid.videoHeight || M().height;
   const sc = Math.min(W / vw, H / vh), w = vw * sc, h = vh * sc;
   return { x: (W - w) / 2, y: (H - h) / 2, w, h };
 }
+// Runs every animation frame: grid, boxes, selection handles, readouts.
 function draw() {
   if (!R && !META) return;
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
@@ -282,6 +286,7 @@ async function loadRuns() {
 }
 $('runs').onchange = e => { const r = RUNS[+e.target.value]; if (!r) return; setSliders(r.cfg); rerun(); };
 
+// Start detection with the current sliders, poll progress, then show the results.
 async function rerun() {
   const btn = $('rerun'); btn.disabled = true; $('startBtn').disabled = true; setDrawer(true);
   const q = baseQ() + cfgParam(cfg);
@@ -439,6 +444,7 @@ function commitName() {
 $('nameIn').addEventListener('change', commitName);
 $('nameIn').addEventListener('keydown', e => { if (e.key === 'Enter') { commitName(); $('nameIn').blur(); } if (e.key === 'Escape') { $('nameIn').value = (selBox() || {}).label || ''; $('nameIn').blur(); } });
 
+// Update the selected-box row (name box, delete/restore/reset buttons).
 function renderSel() {
   const b = selBox(), inp = $('nameIn');
   $('selbox').classList.toggle('on', !!b);
@@ -543,6 +549,7 @@ let FM = null, lookupFor = null;
 const FMVALS = {}, FMRES = {};     // remembered per box while this page is open
 fetch('/api/fishmorph/info').then(r => r.json()).then(i => { FM = i; buildLookup(); renderLookup(); }).catch(() => { FM = { available: false }; });
 const fnum = v => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 100) / 100);
+// Build the measurement boxes of the Fish lookup panel from /api/fishmorph/info.
 function buildLookup() {
   if (!FM || !FM.available) return;
   if (FM.images) $('fmPics').textContent = `Pictures are shown for ${FM.images.toLocaleString()} of the ${FM.rows.toLocaleString()} fish (they load from the internet).`;

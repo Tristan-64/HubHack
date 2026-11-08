@@ -73,3 +73,4 @@
 - Removed species.py, requirements-ai.txt, /api/species routes (species.csv kept for the old Streamlit app), moments, prev/next, summary stats, video count badge, detail/peak lines.
 - Exports: only fish_detections.csv (+ review_state.json save file); source column auto/me.
 - UI: sfps step 0.5; lookup steps; Boxes filters; before/after video mode + Show boxes. Tests: selftest 56, Chrome layout 29. No installs.
+- Comments added to app.py, review.py, fishmorph.py, enhance.py, detector.py, static/app.js. No behaviour change; selftest 56, Node 27, Chrome tests pass.

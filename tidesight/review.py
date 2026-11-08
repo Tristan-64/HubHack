@@ -67,6 +67,7 @@ def _differs(cur, orig):
     return any(abs(float(cur[c]) - float(orig[c])) > TOL for c in COORDS) or cur["label"] != orig["label"]
 
 
+# Merge AI boxes + reviewer edits into one flat list. "counted" = not rejected and (own, or confidence >= slider, or edited). Same rule as boxes.js countedAt.
 def materialize(res, state, thr):
     """Flat list of every box (AI + reviewer) with its final label / status / edited flag."""
     state = normalize_state(state)
@@ -155,6 +156,7 @@ def build_tables(video, res, boxes, thr, run_text, rows=3, cols=3):
     return ann, frames, summary
 
 
+# Write fish_detections.csv (the only report) and the review_state.json save file.
 def write_exports(outdir, video, res, state, thr, run_text, rows=3, cols=3):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -173,6 +175,7 @@ def write_exports(outdir, video, res, state, thr, run_text, rows=3, cols=3):
 TEAL, BLUE, AMBER = (175, 196, 20), (246, 130, 59), (41, 180, 240)  # BGR
 
 
+# Teal = AI box, blue = reviewer box, amber corner marker = edited AI box.
 def draw_boxes(frame, shown, W, H):
     scale = max(0.5, W / 1600.0)
     th = max(2, round(2 * scale))
