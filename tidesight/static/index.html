@@ -18,7 +18,7 @@
   <div class="drop" id="drop"><b>Drop a video here</b><br>or click to choose a file (mp4, mov, m4v, avi)</div>
   <input type="file" id="file" accept="video/*,.mp4,.mov,.m4v,.avi,.mkv" hidden>
   <div class="opts">
-    <label>Pictures checked per second <input type="number" id="sfps" value="2" min="0.1" max="30" step="0.5" style="width:70px"></label>
+    <label>Pictures checked per second <input type="number" id="sfps" value="2" min="0.5" max="30" step="0.5" style="width:70px"></label>
     <label>Fish finder <select id="model"></select></label>
   </div>
   <div id="prog" class="hidden" style="margin-top:16px"><div id="progtxt" style="margin-bottom:6px"></div><div class="bar"><i id="progbar"></i></div></div>
@@ -42,29 +42,20 @@
   </div>
 </aside>
 <div class="main">
-  <section class="panel needs"><div class="stats">
-    <div class="stat"><b id="sLen">–</b><span>Video length</span></div>
-    <div class="stat"><b id="sSkip">–</b><span>With no fish (can be skipped)</span></div>
-    <div class="stat"><b id="sMom">–</b><span>Fish moments</span></div>
-    <div class="stat"><b id="sEdited">0</b><span>AI boxes edited</span></div>
-    <div class="stat"><b id="sOwn">0</b><span>Boxes I drew</span></div>
-    <div class="stat"><b id="sName" style="font-size:15px;font-weight:600;word-break:break-all">–</b><span>File</span></div>
-  </div><div class="cmpline" id="cmp"></div></section>
-
   <section class="panel">
     <h2>Survey footage <small id="mdl"></small></h2>
-    <div id="baWrap" class="ba hidden"><figure><div class="bawrap"><img id="baO"><canvas id="baOc"></canvas></div><figcaption>Original</figcaption></figure><figure><div class="bawrap"><img id="baE"><canvas id="baEc"></canvas></div><figcaption>With your filters</figcaption></figure></div>
-    <div class="stage" id="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas><div class="cntbadge needs" id="cntBadge" title="Fish counted in this picture">🐟 <b id="cntBig">0</b><small id="cntSplit"></small></div></div>
+    <div id="baBar" class="babar hidden"><label><input type="radio" name="bam" value="still" checked> Still pictures</label><label><input type="radio" name="bam" value="video"> Video (plays together)</label><label><input type="checkbox" id="baBoxes" checked> Show boxes</label><span class="note" id="baNote"></span></div>
+    <div id="baWrap" class="ba hidden"><figure><div class="bawrap"><img id="baO"><video id="baOv" muted playsinline preload="auto" class="hidden"></video><canvas id="baOc"></canvas></div><figcaption>Original</figcaption></figure><figure><div class="bawrap"><img id="baE"><video id="baEv" muted playsinline preload="auto" class="hidden"></video><canvas id="baEc"></canvas></div><figcaption id="baEcap">With your filters</figcaption></figure></div>
+    <div class="stage" id="stage"><video id="vid" playsinline preload="auto"></video><canvas id="cv"></canvas></div>
     <div class="ctrls">
       <button class="primary" id="play">▶ Play</button>
-      <button id="prevFish" class="needs">⏮ Previous fish</button><button id="nextFish" class="needs">Next fish ⏭</button>
       <button id="fBtn" title="Open the video filters">🎛 Filters<span class="badge hidden" id="fBadge">changed</span></button>
       <button id="baBtn" title="Compare the paused picture with and without your filters">◧ Before / after</button>
       <button id="stepB" class="needs" title="Back one checked picture">◀ Step</button><button id="stepF" class="needs" title="Forward one checked picture">Step ▶</button>
       <span class="time" id="time">00:00.00 · frame 0</span>
     </div>
     <div class="startrow only-filters"><button class="primary" id="startBtn">▶ Start detection</button><span class="note">Happy with how the video looks? Start detection to find the fish.</span></div>
-    <div class="countbar needs" id="countbar"><span>Fish in this picture: <b id="cntNow">0</b> <small id="cntWho"></small></span><span class="cntdetail" id="cntDetail"></span><span class="cntpeak" id="cntPeak"></span></div>
+    <div class="countbar needs" id="countbar"><span>Fish in this picture: <b id="cntNow">0</b> <small id="cntWho"></small></span></div>
     <div class="selbox needs" id="selbox">
       <div class="selrow"><label for="nameIn"><b>Species</b></label>
         <input type="text" id="nameIn" list="labelList" placeholder="fish" autocomplete="off" disabled><datalist id="labelList"></datalist>
@@ -81,31 +72,23 @@
     <div class="key needs"><span><i style="background:var(--teal)"></i>Confident fish</span><span><i style="background:var(--amber)"></i>Worth a second look</span></div>
     <div class="conf needs"><label for="conf">Count fish at confidence of at least <span id="confv">0.60</span></label>
       <input type="range" id="conf" min="0.2" max="0.95" step="0.05" value="0.6"></div>
-    <div class="spbox needs">
-      <div class="sprow">
-        <div class="menu"><button id="spBtn">🔬 Identify species (AI) ▾</button>
-          <div class="menuitems hidden" id="spMenu"><button id="spFrame">This frame</button><button id="spAll">Whole video</button></div></div>
-        <label for="cut" class="cutl">Call it “Unknown” if less sure than <b id="cutv">0.50</b></label>
-        <input type="range" id="cut" min="0.1" max="0.95" step="0.05" value="0.5" style="flex:1;min-width:160px;margin:0">
-      </div>
-      <div id="spMsg" class="note"></div>
-      <div id="spProg" class="hidden" style="margin-top:8px"><div id="spProgTxt" class="note"></div><div class="bar"><i id="spBar"></i></div></div>
-      <div class="note">⚠ Species names are AI <b>suggestions</b> for a person to check, not answers. “Unknown” means the AI wasn’t sure, the fish was too small, or it may be a species not on our list.</div>
-    </div>
   </section>
 
-  <section class="panel hidden needs" id="spSum"><h2>Species suggestions <small>AI guesses, please check by eye</small></h2><div id="spChips"></div>
-    <div class="note">Counts are fish <i>sightings</i> in the checked pictures, so one fish seen in several pictures is counted more than once.</div></section>
-
   <section class="panel needs" id="boxesPanel"><h2>Boxes <small>every box you can check or fix</small></h2>
-    <div class="filters"><label><input type="checkbox" id="fEdited"> Boxes I edited</label><label><input type="checkbox" id="fRejected"> Show rejected AI boxes</label></div>
+    <div class="filters">
+      <label>Show <select id="fRows"><option value="50">50</option><option value="100">100</option><option value="0">All</option></select> boxes</label>
+      <label>Confidence at least <input type="number" id="fConf" min="0" max="1" step="0.05" placeholder="any" style="width:70px"></label>
+      <label>From <input type="text" id="fFrom" placeholder="0:00" style="width:64px"></label>
+      <label>to <input type="text" id="fTo" placeholder="end" style="width:64px"></label>
+      <label>Sort by <select id="fSort"><option value="time">Time</option><option value="conf">Highest confidence</option></select></label>
+      <label><input type="checkbox" id="fEdited"> Boxes I edited</label><label><input type="checkbox" id="fRejected"> Show rejected boxes</label>
+    </div>
     <div id="boxList"></div>
-    <div class="exprow"><button id="expBtn">Save report (CSV)</button><button id="olBtn">Update the outlined video</button></div>
+    <div class="exprow"><button id="expBtn">Save fish detections (CSV)</button><button id="olBtn">Update the outlined video</button></div>
     <div class="note" id="expMsg"></div><div class="note" id="olMsg"></div>
     <div class="note">The report and the outlined video use your changes. Boxes you rejected are left out. The AI labels detections “fish”; you can edit each box’s species.</div>
   </section>
 
-  <section class="panel moments needs"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>
 </div>
 <aside class="side panel" id="side">
   <button class="rail" id="rpRail" title="Open the video filters">🎛 Filters</button>

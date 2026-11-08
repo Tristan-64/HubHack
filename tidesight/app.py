@@ -17,7 +17,6 @@ from fastapi.staticfiles import StaticFiles
 import detector
 import fishmorph
 import review
-import species
 from enhance import describe_cfg, enhance_frame, normalize_cfg, settings_id
 
 ROOT = Path(__file__).parent
@@ -305,93 +304,6 @@ def results(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = "
 RES_LOCK = threading.Lock()
 
 
-def run_species(key, d, orig, model, sample_fps, conf, only, cfg):
-    """Classify confident boxes. only = sample index (this frame) or None (whole video)."""
-    job = JOBS[key]
-    path = rfile(d, model, sample_fps, settings_id(cfg))
-    try:
-        res = json.loads(path.read_text())
-        S = res["samples"]
-        todo = []
-        for i, s in enumerate(S):
-            if only is not None and i != only:
-                continue
-            need = [j for j, b in enumerate(s["boxes"]) if b[4] >= conf and str(j) not in s.get("sp", {})]
-            if need:
-                todo.append((i, need))
-        job.update(stage="loading", done=0, total=len(todo))
-        if todo:
-            species._classifier()
-        job["stage"] = "analysing"
-        fname = res.get("filtered")
-        use_filtered = bool(fname) and (d / fname).exists()
-        cap = cv2.VideoCapture(str(d / fname if use_filtered else orig))
-        w, h = res["width"], res["height"]
-        fi = 0
-        for n, (i, need) in enumerate(todo):
-            target = S[i]["frame"]
-            if only is not None or target < fi:  # jump straight to the frame
-                cap.set(cv2.CAP_PROP_POS_FRAMES, target)
-                fi = target
-            while fi < target:
-                if not cap.grab():
-                    break
-                fi += 1
-            ok, frame = cap.read()
-            fi += 1
-            if ok:
-                if not use_filtered:
-                    frame = enhance_frame(frame, cfg)
-                crops = {j: species.crop(frame, S[i]["boxes"][j], w, h) for j in need}
-                valid = [j for j, c in crops.items() if c is not None]
-                preds = species.classify([crops[j] for j in valid])
-                sp = S[i].setdefault("sp", {})
-                for j in need:
-                    sp[str(j)] = preds[valid.index(j)] if j in valid else []  # [] = too small to tell
-            job["done"] = n + 1
-        cap.release()
-        with RES_LOCK:
-            fresh = json.loads(path.read_text())
-            fresh["species_conf"] = min(conf, fresh.get("species_conf", 1.0))
-            for i, s in enumerate(S):
-                if "sp" in s:
-                    fresh["samples"][i].setdefault("sp", {}).update(s["sp"])
-            path.write_text(json.dumps(fresh))
-        job["stage"] = "done"
-    except Exception as e:
-        traceback.print_exc()
-        msg = str(e)
-        job.update(stage="error", error="Couldn't download or run the species model. It needs internet the first time."
-                   if any(x in msg for x in ("urlopen", "Connection", "resolve", "CERTIFICATE", "offline", "huggingface"))
-                   else friendly(e))
-
-
-@app.get("/api/species/info")
-def species_info():
-    return {"available": species.available(), "species": [{"common": c, "scientific": s} for c, s in species.load_species()],
-            "generic": species.GENERIC, "min_box_px": species.MIN_BOX_PX}
-
-
-@app.post("/api/species/{vid}")
-def species_run(vid: str, model: str = "nano", sample_fps: float = 2.0, conf: float = 0.6, sample: int = -1, cfg: str = ""):
-    cfg = parse_cfg(cfg)
-    if not species.available():
-        raise HTTPException(400, "Species suggestions need an extra install: pip install -r requirements-ai.txt")
-    d = vdir(vid)
-    key = jkey(vid, model, sample_fps, settings_id(cfg), "_species")
-    if JOBS.get(key, {}).get("stage") in ("loading", "analysing"):
-        return {"started": False}
-    JOBS[key] = {"stage": "loading", "done": 0, "total": 0}
-    threading.Thread(target=run_species, args=(key, d, original_path(d), model, sample_fps, conf, None if sample < 0 else sample, cfg),
-                     daemon=True).start()
-    return {"started": True}
-
-
-@app.get("/api/species_status/{vid}")
-def species_status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
-    return JOBS.get(jkey(vid, model, sample_fps, settings_id(parse_cfg(cfg)), "_species"), {"stage": "idle"})
-
-
 @app.post("/api/analyse/{vid}")
 def analyse_again(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: str = ""):
     """Run (or reuse) detection with these filter settings."""
@@ -540,7 +452,7 @@ def outline_status(vid: str, model: str = "nano", sample_fps: float = 2.0, cfg: 
 @app.get("/download/{vid}/{name}")
 def download(vid: str, name: str):
     d = vdir(vid)
-    if name not in ("annotations.csv", "frames.csv", "summary.csv", "review_state.json", "outlined.mp4"):
+    if name not in (review.CSV_NAME, "review_state.json", "outlined.mp4"):
         raise HTTPException(404)
     p = outdir(d, vid) / name
     if not p.exists():

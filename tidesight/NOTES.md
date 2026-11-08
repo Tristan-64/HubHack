@@ -68,3 +68,8 @@
 ## Fish pictures in the lookup results
 - fishmorph_clean.csv now has image_url/thumbnail_url/image_source/image_credit/image_license/image_page (5,434 of 8,316 fish have pictures). fishmorph.py returns an "image" dict per result (cleaned, http(s) only) or null; app.js showResults draws the picture + credit + source link (all text escaped), falls back url -> thumb -> plain box.
 - Tests: selftest (cleaning, rejection of javascript: links, null for fish without pictures, endpoint) and the Chrome layout test (5 cards, placeholders, escaping, load-failure fallback). No installs.
+
+## Clean-up round
+- Removed species.py, requirements-ai.txt, /api/species routes (species.csv kept for the old Streamlit app), moments, prev/next, summary stats, video count badge, detail/peak lines.
+- Exports: only fish_detections.csv (+ review_state.json save file); source column auto/me.
+- UI: sfps step 0.5; lookup steps; Boxes filters; before/after video mode + Show boxes. Tests: selftest 56, Chrome layout 29. No installs.

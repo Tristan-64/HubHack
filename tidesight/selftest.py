@@ -69,7 +69,7 @@ def frame_at(path, idx):
 # ---------------------------------------------------------------- 1. review.py logic
 res, state = fixture()
 boxes = {b["id"]: b for b in review.materialize(res, state, 0.6)}
-ok(boxes["m0-0"]["edited"] and boxes["m0-0"]["label"] == "cunner" and boxes["m0-0"]["source"] == "model", "AI box renamed+moved: source=model, edited=yes")
+ok(boxes["m0-0"]["edited"] and boxes["m0-0"]["label"] == "cunner" and boxes["m0-0"]["source"] == "model", "AI box renamed+moved: source=auto, edited=yes")
 ok(boxes["m0-0"]["orig"]["label"] == "fish" and abs(boxes["m0-0"]["orig"]["x1"] - .1) < 1e-9, "original label and box are kept")
 ok(boxes["m0-1"]["status"] == "rejected" and not boxes["m0-1"]["counted"], "deleted AI box is rejected and not counted")
 ok(boxes["m1-0"]["counted"] and not boxes["m1-0"]["edited"] and boxes["m1-0"]["label"] == "fish", "untouched AI box: label fish, unedited")
@@ -101,20 +101,18 @@ ok(r.returncode == 0, "Node tests of boxes.js pass: " + (r.stdout.strip() or r.s
 # ---------------------------------------------------------------- 3. exports
 tmp_out = Path(tempfile.mkdtemp())
 files, summary = review.write_exports(tmp_out, "video.mp4", res, state, 0.6, "nano; Original (no changes)")
-rows = list(csv.DictReader(open(tmp_out / "annotations.csv")))
+rows = list(csv.DictReader(open(tmp_out / "fish_detections.csv")))
 cols = rows[0].keys()
-ok({"label", "edited", "original_label", "original_x1", "original_y1", "original_x2", "original_y2", "source", "status"} <= set(cols), "annotations.csv has the new columns")
+ok({"label", "edited", "original_label", "original_x1", "original_y1", "original_x2", "original_y2", "source", "status"} <= set(cols), "fish_detections.csv has the new columns")
 a = {r_["box_id"]: r_ for r_ in rows}
-ok(a["m0-0"]["source"] == "model" and a["m0-0"]["edited"] == "yes" and a["m0-0"]["label"] == "cunner" and a["m0-0"]["original_label"] == "fish"
-   and a["m0-0"]["original_x1"] == str(round(.1 * W)), "edited AI box row: source=model, edited=yes, new label, original box")
-ok(a["m0-1"]["status"] == "rejected", "rejected AI box is in annotations.csv as rejected")
+ok(a["m0-0"]["source"] == "auto" and a["m0-0"]["edited"] == "yes" and a["m0-0"]["label"] == "cunner" and a["m0-0"]["original_label"] == "fish"
+   and a["m0-0"]["original_x1"] == str(round(.1 * W)), "edited AI box row: source=auto, edited=yes, new label, original box")
+ok(a["m0-1"]["status"] == "rejected", "rejected AI box is in fish_detections.csv as rejected")
 ok(a["m1-0"]["original_label"] == "" and a["m1-0"]["edited"] == "no", "unedited AI box has no original columns")
-ok(a["m0-0"]["grid_cell"] == "A1" and a["r1"]["grid_cell"] == "B2", "annotations.csv names the grid cell (A1, B2) of each box")
+ok(a["m0-0"]["grid_cell"] == "A1" and a["r1"]["grid_cell"] == "B2", "fish_detections.csv names the grid cell (A1, B2) of each box")
 ok(review.grid_cell(0.99, 0.99, 3, 3) == "C3" and review.grid_cell(0.5, 0.0, 2, 4) == "A3", "grid cells are lettered by row, numbered by column")
-fr = list(csv.DictReader(open(tmp_out / "frames.csv")))
-ok("edited" in fr[0] and fr[0]["edited"] == "1", "frames.csv has an edited count")
-sm = list(csv.DictReader(open(tmp_out / "summary.csv")))[0]
-ok(sm["boxes_edited"] == "1" and sm["labels_used"] == "fish: 2; cunner: 1", "summary.csv: boxes_edited and labels_used")
+ok(files[0] == "fish_detections.csv" and not (tmp_out / "frames.csv").exists() and not (tmp_out / "summary.csv").exists(), "only one CSV is written")
+ok(summary["boxes_edited"] == 1 and summary["labels_used"] == "fish: 2; cunner: 1", "summary numbers still available")
 ok((tmp_out / "review_state.json").exists(), "review_state.json is saved with the report")
 shutil.rmtree(tmp_out)
 
@@ -156,9 +154,10 @@ ok(c.put(f"/api/review/{VID}", params=q, json=state).json()["saved"], "edits sav
 back = c.get(f"/api/review/{VID}", params=q).json()           # what a page refresh would load
 ok(back["ai"]["0:0"]["label"] == "cunner" and back["ai"]["0:1"]["rejected"] and back["own"][0]["id"] == "r1", "edits survive a reload (new request)")
 e = c.post(f"/api/export/{VID}", params={**q, "thr": 0.6}).json()
-ok('id="cntBig"' in c.get("/").text, "the fish count badge is on the page")
-ok(set(e["files"]) >= {"annotations.csv", "frames.csv", "summary.csv"}, "export wrote the CSV files")
-ok(c.get(f"/download/{VID}/annotations.csv").status_code == 200, "CSV download works")
+pg = c.get("/").text
+ok('id="cntBig"' not in pg and 'id="cntNow"' in pg and 'id="moments"' not in pg and 'id="spBtn"' not in pg and 'prevFish' not in pg, "page: one count line, no badge / moments / species box / prev-next")
+ok(set(e["files"]) == {"fish_detections.csv", "review_state.json"}, "export wrote fish_detections.csv only (plus the save file)")
+ok(c.get(f"/download/{VID}/fish_detections.csv").status_code == 200, "CSV download works")
 ok(c.post(f"/api/outline/{VID}", params={**q, "thr": 0.6}).json()["started"], "outlined video started")
 for _ in range(120):
     s = c.get(f"/api/outline_status/{VID}", params=q).json()

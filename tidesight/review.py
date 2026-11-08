@@ -106,6 +106,7 @@ def labels_used(boxes):
 
 
 # ---------------------------------------------------------------- CSV
+CSV_NAME = "fish_detections.csv"
 ANN_COLS = ["video", "sample", "time_s", "frame", "box_id", "source", "label", "edited", "status", "confidence",
             "x1", "y1", "x2", "y2", "grid_cell", "counted", "original_label", "original_x1", "original_y1", "original_x2", "original_y2"]
 
@@ -122,7 +123,7 @@ def build_tables(video, res, boxes, thr, run_text, rows=3, cols=3):
     ann = []
     for b in boxes:
         row = {"video": video, "sample": b["sample"] + 1, "time_s": b["t"], "frame": b["frame"], "box_id": b["id"],
-               "source": b["source"], "label": b["label"], "edited": "yes" if b["edited"] else "no", "status": b["status"],
+               "source": "auto" if b["source"] == "model" else "me", "label": b["label"], "edited": "yes" if b["edited"] else "no", "status": b["status"],
                "confidence": "" if b["confidence"] is None else round(b["confidence"], 4),
                "x1": round(b["cur"]["x1"] * W), "y1": round(b["cur"]["y1"] * H), "x2": round(b["cur"]["x2"] * W),
                "y2": round(b["cur"]["y2"] * H),
@@ -159,15 +160,13 @@ def write_exports(outdir, video, res, state, thr, run_text, rows=3, cols=3):
     outdir.mkdir(parents=True, exist_ok=True)
     boxes = materialize(res, state, thr)
     ann, frames, summary = build_tables(video, res, boxes, thr, run_text, rows, cols)
-    for name, rows, cols in (("annotations.csv", ann, ANN_COLS), ("frames.csv", frames, list(frames[0].keys()) if frames else ["sample"]),
-                             ("summary.csv", [summary], list(summary.keys()))):
-        with open(outdir / name, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=cols)
-            w.writeheader()
-            w.writerows(rows)
+    with open(outdir / CSV_NAME, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=ANN_COLS)
+        w.writeheader()
+        w.writerows(ann)
     shutil_state = outdir / "review_state.json"
     shutil_state.write_text(json.dumps(normalize_state(state), indent=1))
-    return ["annotations.csv", "frames.csv", "summary.csv", "review_state.json"], summary
+    return [CSV_NAME, "review_state.json"], summary
 
 
 # ---------------------------------------------------------------- outlined video

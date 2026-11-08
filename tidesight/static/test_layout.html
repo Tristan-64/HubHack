@@ -43,6 +43,29 @@ fetch('/static/index.html').then(r => r.text()).then(html => {
       ok($('srchRes').textContent.indexOf('(c) Jo') >= 0 && $('srchRes').textContent.indexOf('cc-by') >= 0, 'credit and licence are shown');
       await new Promise(res => setTimeout(res, 3000));
       ok($('srchRes').querySelectorAll('.fmpic.none').length >= 4 && /could not be loaded/.test($('srchRes').textContent), 'a picture that cannot load is replaced by a plain box');
+      // clean-up round
+      ok(!$('cntBadge') && !$('cmp') && !$('moments') && !$('spBtn') && !$('prevFish') && !$('nextFish') && !$('cntDetail') && !document.querySelector('.stats'), 'removed: video badge, summary box, moments, species box, previous/next, detail line');
+      ok($('sfps').step === '0.5' && $('sfps').min === '0.5', 'pictures per second moves in 0.5 steps');
+      FM = { available: true, traits: ['MBl', 'BEl', 'VEp', 'REs', 'OGp', 'RMl', 'BLs', 'PFv', 'PFs', 'CPt'].map(c => ({ code: c, name: c, hint: '', median: 1 })) }; buildLookup();
+      const st = c => document.querySelector('#srchGrid input[data-code=' + c + ']').step;
+      ok(['MBl', 'BEl', 'CPt'].every(c => st(c) === '1') && ['VEp', 'REs', 'OGp', 'RMl', 'BLs', 'PFv', 'PFs'].every(c => st(c) === '0.1'), 'lookup steps: 1 for MBl/BEl/CPt, 0.1 for the rest');
+      // boxes filters: 120 boxes, confidence 0.30 .. 0.99
+      R = { duration: 120, fps: 30, width: 16, height: 9, sample_fps: 1, samples: Array.from({ length: 120 }, (_, i) => ({ t: i, frame: i * 30, boxes: [[.1, .1, .3, .3, 0.3 + (i % 70) / 100]] })) };
+      DOC = Boxes.emptyDoc(); thr = 0.2; renderReview();
+      const rowsN = () => $('boxList').querySelectorAll('tr[data-id]').length;
+      ok(rowsN() === 50 && /Showing 50 of 120/.test($('boxList').textContent), 'Boxes list shows 50 by default');
+      $('fRows').value = '100'; renderReview(); ok(rowsN() === 100, 'can show 100');
+      $('fRows').value = '0'; renderReview(); ok(rowsN() === 120, 'can show all');
+      $('fConf').value = '0.9'; renderReview(); ok(rowsN() > 0 && rowsN() < 120 && [...$('boxList').querySelectorAll('tr[data-id] td:nth-child(4)')].every(td => parseFloat(td.textContent) >= 0.9), 'minimum confidence filter');
+      $('fConf').value = ''; $('fFrom').value = '0:10'; $('fTo').value = '0:19'; renderReview(); ok(rowsN() === 10, 'time range filter (0:10 to 0:19 = 10 boxes)');
+      $('fFrom').value = ''; $('fTo').value = ''; $('fSort').value = 'conf'; $('fRows').value = '50'; renderReview();
+      ok(parseFloat($('boxList').querySelector('tr[data-id] td:nth-child(4)').textContent) >= 0.99 && /Auto/.test($('boxList').textContent) && !/>AI</.test($('boxList').innerHTML), 'sort by confidence; the Who column says Auto');
+      // before / after as video
+      baOn = false; $('baBtn').click(); document.querySelector('input[name=bam][value=video]').click();
+      ok(!$('baOv').classList.contains('hidden') && !$('baEv').classList.contains('hidden') && $('baO').classList.contains('hidden'), 'before/after video mode shows two videos');
+      ok($('baBoxes').checked, 'Show boxes switch is on by default'); $('baBoxes').click();
+      const bc = $('baOc'); paintBoxes('baOc', $('baOv'), [{ x1: .1, y1: .1, x2: .5, y2: .5, label: 'Fish', conf: .9 }]);
+      ok(!bc.width || !bc.getContext('2d').getImageData(0, 0, bc.width, bc.height).data.some(v => v), 'with Show boxes off nothing is drawn');
       const pre = document.createElement('pre'); pre.id = 'result';
       pre.textContent = log.join('\\n') + '\\n' + (log.some(l => l.startsWith('FAIL')) ? 'FAILED' : 'ALL PASS ' + log.length);
       document.body.appendChild(pre);
