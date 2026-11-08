@@ -35,7 +35,7 @@ def main():
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         r = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=4000", "--dump-dom",
                             f"http://127.0.0.1:{port}/static/test_editor.html"], capture_output=True, text=True, timeout=90)
-        r2 = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--window-size=1440,900", "--virtual-time-budget=8000",
+        r2 = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--window-size=1440,900", "--virtual-time-budget=25000",
                              "--dump-dom", f"http://127.0.0.1:{port}/static/test_layout.html"], capture_output=True, text=True, timeout=90)
         srv.shutdown()
     status = 0

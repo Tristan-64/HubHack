@@ -195,6 +195,17 @@ ok(c.get("/api/fishmorph/info").json()["available"], "fish lookup info endpoint 
 r_ = c.post("/api/fishmorph/search", json={"values": {"MBl": 12, "VEp": 0.55}})
 ok(r_.status_code == 200 and len(r_.json()["results"]) == 5, "fish lookup search endpoint returns 5 fish")
 ok(c.post("/api/fishmorph/search", json={"values": {}}).status_code == 400, "empty search gives a friendly error")
+import pandas as pd2  # noqa: E402
+bad = fishmorph._image(pd2.Series({"image_url": "javascript:alert(1)", "thumbnail_url": "data:text/html,x", "image_credit": "a"}))
+ok(bad is None, "javascript:/data: picture links are rejected")
+im = fishmorph._image(pd2.Series({"image_url": "https://x.example/a.jpg", "thumbnail_url": None, "image_credit": "(c) \nJo   Bloggs\n",
+                                  "image_source": "iNaturalist", "image_license": float("nan"), "image_page": "javascript:x"}))
+ok(im["credit"] == "(c) Jo Bloggs" and im["thumb"] == im["url"] and im["license"] == "" and im["page"] == "", "picture details are cleaned (one line, no nan, bad page link dropped)")
+ok(fishmorph.info()["images"] > 5000, "the table reports how many fish have pictures")
+found = fishmorph.search({"MBl": 12, "VEp": 0.55, "BEl": 4})
+ok(all("image" in f_ for f_ in found) and any(f_["image"] and f_["image"]["url"].startswith("https://") for f_ in found), "each of the 5 results carries its picture details")
+ok(any(f_["image"] is None for f_ in fishmorph.search({"MBl": 12, "VEp": 0.55, "BEl": 4}, k=40)), "fish without a picture come back with image = null (not skipped)")
+ok("image" in c.post("/api/fishmorph/search", json={"values": {"MBl": 12, "VEp": 0.55}}).json()["results"][0], "the search endpoint returns the picture details")
 page = c.get("/").text
 ok('id="lpanel"' in page and 'id="srchBtn"' in page and 'id="lpRail"' in page and 'id="rpRail"' in page, "page has the left lookup panel and both minimise rails")
 

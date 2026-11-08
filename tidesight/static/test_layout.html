@@ -30,6 +30,19 @@ fetch('/static/index.html').then(r => r.text()).then(html => {
       $('lpRail').click(); await settle(); ok(rv.classList.contains('lp-open'), 'the left rail reopens it');
       $('fClose').click(); await settle(); ok(!rv.classList.contains('rp-open'), 'the right minimise button works');
       $('rpRail').click(); await settle(); ok(rv.classList.contains('rp-open'), 'the right rail reopens it');
+      // pictures in the fish lookup results
+      const fk = (n, img) => ({ species: 'Fish ' + n, family: 'Fam', order: 'Ord', difference: 0.1 * n, compared: 3, typed: 3, values: { MBl: 1 }, image: img });
+      const good = n => ({ url: 'https://pic.invalid/' + n + '.jpg', thumb: 'https://pic.invalid/' + n + 't.jpg', source: 'iNaturalist', credit: '(c) Jo', license: 'cc-by', page: 'https://pic.invalid/p' + n });
+      showResults([fk(1, Object.assign(good(1), { credit: '(c) A <img src=x onerror=window.__pwn=1>' })), fk(2, good(2)), fk(3, null), fk(4, { url: 'javascript:alert(1)', thumb: '', source: 'x', credit: '', license: '', page: '' }), fk(5, good(5))]);
+      const cards = $('srchRes').querySelectorAll('.fmres'), imgs = $('srchRes').querySelectorAll('.fmpic img');
+      ok(cards.length === 5, 'five result cards');
+      ok(imgs.length === 3 && imgs[0].getAttribute('src') === 'https://pic.invalid/1.jpg', 'a picture for each fish that has one');
+      ok($('srchRes').querySelectorAll('.fmpic.none').length === 2, 'fish without a usable picture get a "No picture available" box (javascript: link refused)');
+      ok(!document.querySelector('#srchRes img[src="x"]') && !window.__pwn, 'photo credit text is escaped, nothing is injected');
+      ok([...$('srchRes').querySelectorAll('.fmcredit a')].every(a => a.target === '_blank' && /noopener/.test(a.rel)), 'photo source links open in a new tab safely');
+      ok($('srchRes').textContent.indexOf('(c) Jo') >= 0 && $('srchRes').textContent.indexOf('cc-by') >= 0, 'credit and licence are shown');
+      await new Promise(res => setTimeout(res, 3000));
+      ok($('srchRes').querySelectorAll('.fmpic.none').length >= 4 && /could not be loaded/.test($('srchRes').textContent), 'a picture that cannot load is replaced by a plain box');
       const pre = document.createElement('pre'); pre.id = 'result';
       pre.textContent = log.join('\\n') + '\\n' + (log.some(l => l.startsWith('FAIL')) ? 'FAILED' : 'ALL PASS ' + log.length);
       document.body.appendChild(pre);

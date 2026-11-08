@@ -15,6 +15,6 @@ any box (select, rename, move, resize, delete; AI boxes are "rejected", not eras
 The optional BioCLIP species *suggestions* (species.py, requirements-ai.txt) stay separate and never write box names. No hosted AI.
 Use the Mac GPU (mps) with CPU fallback. Commands are for macOS/zsh.
 Files: app.py (FastAPI), detector.py, review.py (edits, CSV, outlined video), static/index.html, app.js, boxes.js, editor.js, style.css.
-Side panels: left = fish lookup (fishmorph.py + fishmorph_clean.csv, top-5 nearest by typed traits), right = video filters; both docked, minimisable, and push the video.
+Side panels: left = fish lookup (fishmorph.py + fishmorph_clean.csv, top-5 nearest by typed traits, with reference photos hot-linked by the browser from the CSV's image URLs; credits shown; the app itself still sends no video or data anywhere), right = video filters; both docked, minimisable, and push the video.
 Tests: selftest.py (Python + Node), component_test.py (headless Chrome, static/test_editor.html), tests/boxes_node_test.js.
 Old Streamlit prototype lives in streamlit_app.py (+ detect.py, video.py, etc.); not used by this app.

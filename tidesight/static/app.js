@@ -614,6 +614,7 @@ fetch('/api/fishmorph/info').then(r => r.json()).then(i => { FM = i; buildLookup
 const fnum = v => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 100) / 100);
 function buildLookup() {
   if (!FM || !FM.available) return;
+  if (FM.images) $('fmPics').textContent = `Pictures are shown for ${FM.images.toLocaleString()} of the ${FM.rows.toLocaleString()} fish (they load from the internet).`;
   $('srchGrid').innerHTML = FM.traits.map(t => `<label class="fmrow" title="${t.name}: ${t.hint}"><span><b>${t.code}</b> <small>${t.name}</small></span><input type="number" step="any" data-code="${t.code}" placeholder="e.g. ${fnum(t.median)}"></label>`).join('');
   $('srchGrid').querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
     if (!lookupFor) return; (FMVALS[lookupFor] = FMVALS[lookupFor] || {})[inp.dataset.code] = inp.value;
@@ -645,16 +646,31 @@ $('srchGo').onclick = async () => {
   if (!r.ok) { let t = ''; try { t = (await r.json()).detail; } catch { } msg.textContent = t || 'Search failed.'; msg.classList.remove('hidden'); return; }
   const res = (await r.json()).results; FMRES[lookupFor] = res; showResults(res);
 };
+const safeUrl = u => (/^https?:\/\//i.test(u || '') ? htmlEscape(u) : '');
 function showResults(res) {
   const el = $('srchRes');
   if (!res) { el.innerHTML = ''; return; }
   if (!res.length) { el.innerHTML = '<p class="note">No fish had enough of those measurements to compare. Try fewer numbers.</p>'; return; }
-  el.innerHTML = '<p class="note"><b>Closest fish</b> (a lower difference is a closer match)</p>' + res.map((m, k) =>
-    `<div class="fmres"><b>${k + 1}. <i>${m.species}</i></b><div class="note">${m.family} · ${m.order}</div>
+  el.innerHTML = '<p class="note"><b>Closest fish</b> (a lower difference is a closer match)</p>' + res.map((m, k) => {
+    const im = m.image, big = im && safeUrl(im.url);
+    const pic = big
+      ? `<a class="fmpic" href="${big}" target="_blank" rel="noopener noreferrer" title="Open the larger picture"><img src="${big}" data-thumb="${safeUrl(im.thumb)}" alt="${htmlEscape(m.species)}" loading="lazy" referrerpolicy="no-referrer"></a>`
+      : '<div class="fmpic none">No picture available</div>';
+    const page = im && safeUrl(im.page);
+    const credit = im ? `<div class="fmcredit">Photo: ${htmlEscape(im.credit || 'credit not given')}${im.license ? ` · ${htmlEscape(im.license)}` : ''}${page ? ` · <a href="${page}" target="_blank" rel="noopener noreferrer">${htmlEscape(im.source || 'source')} ↗</a>` : ''}</div>` : '';
+    return `<div class="fmres">${pic}<b>${k + 1}. <i>${htmlEscape(m.species)}</i></b><div class="note">${htmlEscape(m.family)} · ${htmlEscape(m.order)}</div>
      <div class="note">Difference <b>${m.difference.toFixed(2)}</b> · compared ${m.compared} of the ${m.typed} number${m.typed === 1 ? '' : 's'} you typed</div>
-     <div class="fmvals">${Object.entries(m.values).map(([c, v]) => `${c} ${v === null ? '–' : fnum(v)}`).join(' · ')}</div>
-     <button data-name="${m.species}">Use as this box’s species</button></div>`).join('');
+     <div class="fmvals">${Object.entries(m.values).map(([c, v]) => `${c} ${v === null ? '–' : fnum(v)}`).join(' · ')}</div>${credit}
+     <button data-name="${htmlEscape(m.species)}">Use as this box’s species</button></div>`;
+  }).join('');
 }
+// a picture that fails to load: try the small version, then show a plain "no picture" box (error events do not bubble, so capture them)
+$('srchRes').addEventListener('error', e => {
+  const img = e.target; if (!img || img.tagName !== 'IMG') return;
+  if (!img.dataset.tried && img.dataset.thumb && img.src !== img.dataset.thumb) { img.dataset.tried = '1'; img.src = img.dataset.thumb; return; }
+  const box = document.createElement('div'); box.className = 'fmpic none'; box.textContent = 'Picture could not be loaded';
+  (img.closest('a') || img).replaceWith(box);
+}, true);
 $('srchRes').addEventListener('click', e => {
   const b = e.target.closest('button[data-name]'); if (!b || !SEL) return;
   const name = b.dataset.name; edit(() => Boxes.patchBox(R, DOC, SEL, { label: name })); renderSel();

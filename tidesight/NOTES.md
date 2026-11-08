@@ -64,3 +64,7 @@
 - Layout: 3-column grid (left lookup | video | right filters); both panels minimise to rails; removed the floating filter drawer/scrim/tab; fixed a stray </div> that had put the filters aside outside the layout
 - fishmorph.py: nearest-species search over fishmorph_clean.csv (robust-scaled traits, log for MBl/BEl, missing-aware, aliases MBI/BEI/RMI); app.py /api/fishmorph/info + /search; left panel UI in static/app.js
 - Tests: selftest.py (lookup + endpoints), component_test.py (static/test_layout.html measures the real page: video shrinks/grows, panels never cover it, rails work). Screenshot checked by eye. No installs.
+
+## Fish pictures in the lookup results
+- fishmorph_clean.csv now has image_url/thumbnail_url/image_source/image_credit/image_license/image_page (5,434 of 8,316 fish have pictures). fishmorph.py returns an "image" dict per result (cleaned, http(s) only) or null; app.js showResults draws the picture + credit + source link (all text escaped), falls back url -> thumb -> plain box.
+- Tests: selftest (cleaning, rejection of javascript: links, null for fish without pictures, endpoint) and the Chrome layout test (5 cards, placeholders, escaping, load-failure fallback). No installs.

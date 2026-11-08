@@ -65,9 +65,32 @@ def _load():
     return _cache
 
 
+def _clean(v):
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return ""
+    return " ".join(str(v).split())          # one line, single spaces
+
+
+def _url(v):
+    s = _clean(v)
+    return s if s.lower().startswith(("https://", "http://")) else ""     # never javascript: or data: links
+
+
+def _image(row):
+    """Picture details for a species, or None when the table has no usable picture for it."""
+    url, thumb = _url(row.get("image_url")), _url(row.get("thumbnail_url"))
+    if not url and not thumb:
+        return None
+    return {"url": url or thumb, "thumb": thumb or url, "source": _clean(row.get("image_source")),
+            "credit": _clean(row.get("image_credit")), "license": _clean(row.get("image_license")),
+            "page": _url(row.get("image_page"))}
+
+
 def info():
     st = _load()["stats"]
-    return {"rows": int(len(_load()["df"])),
+    df = _load()["df"]
+    n_img = int(sum(1 for _, r in df.iterrows() if _image(r))) if "image_url" in df.columns else 0
+    return {"rows": int(len(df)), "images": n_img,
             "traits": [{"code": c, "name": n, "hint": h, "min": st[c]["min"], "median": st[c]["median"], "max": st[c]["max"]} for c, n, h in TRAITS]}
 
 
@@ -110,5 +133,6 @@ def search(values, k=5):
         row = df.iloc[i]
         out.append({"species": str(row["Genus.Species"]), "family": str(row["Family"]), "order": str(row["Order"]),
                     "difference": round(float(dist[i]), 3), "compared": int(count[i]), "typed": n_used,
-                    "values": {t: (None if pd.isna(row[t]) else round(float(row[t]), 3)) for t in CODES}})
+                    "values": {t: (None if pd.isna(row[t]) else round(float(row[t]), 3)) for t in CODES},
+                    "image": _image(row)})
     return out
