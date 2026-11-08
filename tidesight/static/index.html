@@ -66,7 +66,7 @@
     <div class="startrow only-filters"><button class="primary" id="startBtn">▶ Start detection</button><span class="note">Happy with how the video looks? Start detection to find the fish.</span></div>
     <div class="countbar needs" id="countbar"><span>Fish in this picture: <b id="cntNow">0</b> <small id="cntWho"></small></span><span class="cntdetail" id="cntDetail"></span><span class="cntpeak" id="cntPeak"></span></div>
     <div class="selbox needs" id="selbox">
-      <div class="selrow"><label for="nameIn"><b>Name</b></label>
+      <div class="selrow"><label for="nameIn"><b>Species</b></label>
         <input type="text" id="nameIn" list="labelList" placeholder="fish" autocomplete="off" disabled><datalist id="labelList"></datalist>
         <button id="delBtn" class="hidden">Delete box</button><button id="restoreBtn" class="hidden primary">Restore AI box</button>
         <button id="resetBtn" class="hidden">Reset to the AI’s box</button><button id="undoBtn" disabled>↩ Undo</button>
@@ -102,7 +102,7 @@
     <div id="boxList"></div>
     <div class="exprow"><button id="expBtn">Save report (CSV)</button><button id="olBtn">Update the outlined video</button></div>
     <div class="note" id="expMsg"></div><div class="note" id="olMsg"></div>
-    <div class="note">The report and the outlined video use your changes. Boxes you rejected are left out. The AI only ever calls things “fish”; any other name is typed by a person.</div>
+    <div class="note">The report and the outlined video use your changes. Boxes you rejected are left out. The AI labels detections “fish”; you can edit each box’s species.</div>
   </section>
 
   <section class="panel moments needs"><h2>Fish moments <small>Click one to jump there</small></h2><div id="moments"></div></section>

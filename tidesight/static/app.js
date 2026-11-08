@@ -4,6 +4,7 @@ let R = null, VID = null, momentsList = [], thr = 0.6, cutoff = 0.5, SP = { avai
 let GRID = { on: false, rows: 3, cols: 3 }, lastCount = '';
 let DOC = Boxes.emptyDoc(), HIST = Boxes.createHistory(), SEL = null, saveTimer = null, liveActive = false, ED = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const htmlEscape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const curModel = () => $('model').value, curRate = () => parseFloat($('sfps').value) || 2;
 const M = () => R || META || { duration: 1, fps: 30, width: 16, height: 9 };
 const vid = $('vid'), cv = $('cv'), ctx = cv.getContext('2d');
@@ -125,8 +126,6 @@ function recompute() {
   draw();
 }
 
-const cellName = (cx, cy) => String.fromCharCode(65 + Math.min(Math.max(Math.floor(cy * GRID.rows), 0), GRID.rows - 1)) + (Math.min(Math.max(Math.floor(cx * GRID.cols), 0), GRID.cols - 1) + 1);
-const cellOfBox = b => cellName((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
 function drawGrid() {
   const v = videoRect(), r = GRID.rows, c = GRID.cols;
   ctx.save(); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.fillStyle = 'rgba(255,255,255,.85)';
@@ -555,12 +554,29 @@ function renderReview() {
   if (onlyEdited) rows = rows.filter(b => b.edited);
   rows.sort((a, b) => R.samples[a.i].t - R.samples[b.i].t);
   const cap = rows.length > 300; if (cap) rows = rows.slice(0, 300);
-  $('boxList').innerHTML = rows.length ? `<table class="bt"><tr><th>Time</th><th>Cell</th><th>Name</th><th>Who</th><th>Confidence</th><th></th></tr>` + rows.map(b =>
-    `<tr data-id="${b.id}" class="${b.id === SEL ? 'sel' : ''}"><td>${fmt(R.samples[b.i].t, 1)}</td><td>${GRID.on ? cellOfBox(b) : '–'}</td><td>${b.label.replace(/</g, '&lt;')}</td><td>${b.kind === 'own' ? 'Me' : 'AI'}</td><td>${b.conf === null ? '–' : b.conf.toFixed(2)}</td><td>${b.edited ? '✎ edited ' : ''}${b.rejected ? 'rejected' : ''}</td></tr>`).join('') + '</table>' + (cap ? '<p class="note">Showing the first 300 boxes.</p>' : '')
+  $('boxList').innerHTML = rows.length ? `<table class="bt"><tr><th>Time</th><th>Species</th><th>Who</th><th>Confidence</th><th></th></tr>` + rows.map(b =>
+    `<tr data-id="${b.id}" class="${b.id === SEL ? 'sel' : ''}"><td><button type="button" class="box-time" data-jump="${b.id}" aria-label="Jump to fish at ${fmt(R.samples[b.i].t, 1)}">${fmt(R.samples[b.i].t, 1)}</button></td><td><input class="species-input" type="text" data-species="${b.id}" value="${htmlEscape(b.label)}" aria-label="Species"></td><td>${b.kind === 'own' ? 'Me' : 'AI'}</td><td>${b.conf === null ? '–' : b.conf.toFixed(2)}</td><td>${b.edited ? '✎ edited ' : ''}${b.rejected ? 'rejected' : ''}</td></tr>`).join('') + '</table>' + (cap ? '<p class="note">Showing the first 300 boxes.</p>' : '')
     : '<p class="note">No boxes to show here.</p>';
 }
 $('ticks').addEventListener('click', e => { const t = e.target.closest('.tick'); if (t) select(t.dataset.id, true); });
-$('boxList').addEventListener('click', e => { const r = e.target.closest('tr[data-id]'); if (r) select(r.dataset.id, true); });
+$('boxList').addEventListener('click', e => {
+  const time = e.target.closest('.box-time');
+  if (time) {
+    e.stopPropagation();
+    select(time.dataset.jump, true);
+    $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  if (e.target.closest('.species-input')) return;
+  const r = e.target.closest('tr[data-id]'); if (r) select(r.dataset.id, true);
+});
+$('boxList').addEventListener('change', e => {
+  const input = e.target.closest('.species-input'); if (!input) return;
+  const b = Boxes.findBox(R, DOC, input.dataset.species); if (!b) return;
+  const label = input.value.trim() || Boxes.DEFAULT;
+  if (label !== b.label) edit(() => Boxes.patchBox(R, DOC, b.id, { label }));
+  else input.value = label;
+});
 $('fEdited').onchange = $('fRejected').onchange = renderReview;
 
 // ---------- reports and the outlined video ----------
@@ -637,7 +653,7 @@ function showResults(res) {
     `<div class="fmres"><b>${k + 1}. <i>${m.species}</i></b><div class="note">${m.family} · ${m.order}</div>
      <div class="note">Difference <b>${m.difference.toFixed(2)}</b> · compared ${m.compared} of the ${m.typed} number${m.typed === 1 ? '' : 's'} you typed</div>
      <div class="fmvals">${Object.entries(m.values).map(([c, v]) => `${c} ${v === null ? '–' : fnum(v)}`).join(' · ')}</div>
-     <button data-name="${m.species}">Use as this box’s name</button></div>`).join('');
+     <button data-name="${m.species}">Use as this box’s species</button></div>`).join('');
 }
 $('srchRes').addEventListener('click', e => {
   const b = e.target.closest('button[data-name]'); if (!b || !SEL) return;
